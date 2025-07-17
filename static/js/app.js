@@ -114,6 +114,27 @@ function processAndSanitizeData(data) {
 			initialDataReceived = true;
 		}
 	}
+	
+	// Handle update notification display
+	updateNotificationDisplay();
+}
+
+/**
+ * Updates the update notification display in the footer.
+ * Shows update notification only when an update is available.
+ */
+function updateNotificationDisplay() {
+	const updateStatusElement = document.getElementById('updateStatusMessage');
+	if (!updateStatusElement) return;
+	
+	// Only show notification if update check is completed and update is available
+	if (clientState.update_check_completed && clientState.update_available && clientState.latest_version) {
+		updateStatusElement.innerHTML = ` | <span style="color: #ff6b35; font-weight: bold;">🔄 Update v${clientState.latest_version} Available!</span>`;
+		updateStatusElement.style.display = 'inline';
+	} else {
+		updateStatusElement.innerHTML = '';
+		updateStatusElement.style.display = 'none';
+	}
 }
 
 /**
