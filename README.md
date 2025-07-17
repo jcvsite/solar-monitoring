@@ -93,7 +93,7 @@ This framework comes with the following built-in plugins. The status indicates t
     ![Solar Monitor Web Dashboard Overview - Dark Mode](screenshots/web_dashboard_overview_darkmode.png)
     _The main web interface showing key metrics and charts (Light and Dark modes)._
 
-    ![Energy Flow Diagram](screenshots/solar-monitoring-preview.gif)
+    ![Energy Flow Diagram](screenshots/solar-monitoring-preview.mp4)
     _Live energy flow visualization between PV, Grid, Battery, and Load._
 
 *   **Console Dashboard:**
@@ -147,7 +147,6 @@ The Solar Monitoring Framework uses a robust, multi-threaded architecture design
 ### 🏗️ Architecture Overview
 
 ![Architecture Overview](screenshots/architecture_overview.png)
-_The architecture overview of Solar Monitoring Framework._
 
 ### 🔄 Key Features
 
@@ -181,7 +180,7 @@ This architecture ensures reliable, continuous monitoring with automatic recover
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/jcvsite/solar-monitoring.git
+    git clone https://github.com/yourusername/solar-monitoring.git
     cd your-repository-name
     ```
 
@@ -412,7 +411,7 @@ Ensure your project directory is set up as follows for the script and web interf
 The script version is defined by the `__version__` variable in `main.py`.
 If `CHECK_FOR_UPDATES` is enabled, the script will:
 *   Require internet access.
-*   Fetch the latest script version from the `main` branch of the jcvsite/solar-monitoring repository.
+*   Fetch the latest script version from the `main` branch of your GitHub repository.
 *   Compare versions using the `packaging` library for accurate comparison (e.g., `1.10.0` > `1.9.0`).
 *   Log if an update is available. This check is non-blocking and will not prevent the script from running.
 
@@ -491,19 +490,22 @@ This project is built with the help of several fantastic open-source libraries a
 
 ### ⚙️ Backend
 
-*   **Python**: The core programming language.
-*   **Flask**: A lightweight web framework for the web dashboard.
-*   **Flask-SocketIO**: For real-time, bidirectional communication between the server and web clients.
-*   **Pymodbus**: For Modbus communication with inverters and other devices.
-*   **Paho-MQTT**: For MQTT integration with Home Assistant and other services.
-*   **Tinytuya**: For local control of Tuya-based smart devices.
+*   **[Python](https://github.com/python/cpython)**: The core programming language.
+*   **[Flask](https://github.com/pallets/flask)**: A lightweight web framework for the web dashboard.
+*   **[Flask-SocketIO](https://github.com/miguelgrinberg/Flask-SocketIO)**: For real-time, bidirectional communication between the server and web clients.
+*   **[Pymodbus](https://github.com/pymodbus-dev/pymodbus)**: For Modbus communication with inverters and other devices.
+*   **[Paho-MQTT](https://github.com/eclipse/paho.mqtt.python)**: For MQTT integration with Home Assistant and other services.
+*   **[Tinytuya](https://github.com/jasonacox/tinytuya)**: For local control of Tuya-based smart devices.
+*   **[Eventlet](https://github.com/eventlet/eventlet)**: Async library for concurrent networking.
+*   **[PySerial](https://github.com/pyserial/pyserial)**: For serial port communication with devices.
+*   **[Packaging](https://github.com/pypa/packaging)**: For robust version comparison in update checking.
 
 ### 🎨 Frontend & Data Services
 
-*   **Chart.js**: For creating the beautiful and responsive charts used in the web dashboard.
-*   **Leaflet.js**: An open-source JavaScript library for interactive maps, used in the weather widget.
-*   **Open-Meteo**: Provides the free, high-quality weather forecast data.
-*   **RainViewer**: Provides the free weather radar map overlay.
+*   **[Chart.js](https://github.com/chartjs/Chart.js)**: For creating the beautiful and responsive charts used in the web dashboard.
+*   **[Leaflet.js](https://github.com/Leaflet/Leaflet)**: An open-source JavaScript library for interactive maps, used in the weather widget.
+*   **[Open-Meteo](https://open-meteo.com/)**: Provides the free, high-quality weather forecast data.
+*   **[RainViewer](https://www.rainviewer.com/)**: Provides the free weather radar map overlay.
 
 ## License
 
