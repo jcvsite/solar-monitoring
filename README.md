@@ -244,7 +244,7 @@ Edit the `config.ini` file. Key sections:
     *   `PLUGIN_INSTANCES`: This is the most important setting. List the names of the plugin configurations you will create. For example:
     *   PLUGIN_INSTANCES = main_inverter, main_bms
     *   `LOCAL_TIMEZONE`: Your local IANA timezone name (e.g., `Asia/Manila`, `Europe/London`, `America/New_York`). Defaults to `UTC`. A list can be found [here](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
-    *   `CHECK_FOR_UPDATES`: `true` (default) or `false` to enable/disable checking GitHub for script updates on startup.
+    *   `CHECK_FOR_UPDATES`: `true` or `false` (default) to enable/disable checking GitHub for script updates on startup.
 *   **`[INVERTER_SYSTEM]`:** These values define your physical system and are used for calculations and filtering.
     *   `DEFAULT_MPPT_COUNT`: Total number of MPPTs on your inverter.
     *   `PV_INSTALLED_CAPACITY_W`: Total peak DC power of your solar array in Watts.
