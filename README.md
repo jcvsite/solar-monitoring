@@ -192,8 +192,8 @@ This architecture ensures reliable, continuous monitoring with automatic recover
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/yourusername/solar-monitoring.git
-    cd your-repository-name
+    git clone https://github.com/jcvsite/solar-monitoring.git
+    cd solar-monitoring
     ```
 
 2.  **Create a Python Virtual Environment (Recommended):**
@@ -223,15 +223,15 @@ python main.py
 
 For simple auto-restart on Windows if the script crashes (though the internal watchdog aims to prevent hangs):
 
-1.  **Create Batch File:** Create a text file named `start_solar_monitor.bat` in your script directory.
+1.  **Create Batch File:** Create a text file named `start_solar_monitor.bat` in your solar-monitoring directory.
 2.  **Edit Batch File:** Add these lines, **using the full paths** to your Python executable (if not in PATH or if using a venv) and the script:
     ```batch
     @echo off
-    cd /d "C:\path\to\your\script\directory"
+    cd /d "C:\path\to\solar-monitoring"
     :loop
     echo Starting Solar Monitoring...
     REM If using a virtual environment:
-    REM C:\path\to\your\script\directory\venv\Scripts\python.exe main.py
+    REM C:\path\to\solar-monitoring\venv\Scripts\python.exe main.py
     REM If Python is in PATH and no venv:
     python main.py
     echo Script exited with errorlevel %errorlevel%. Waiting 10 seconds before restart...
@@ -423,7 +423,7 @@ Ensure your project directory is set up as follows for the script and web interf
 The script version is defined by the `__version__` variable in `main.py`.
 If `CHECK_FOR_UPDATES` is enabled, the script will:
 *   Require internet access.
-*   Fetch the latest script version from the `main` branch of your GitHub repository.
+*   Fetch the latest script version from the `main` branch of the jcvsite/solar-monitoring
 *   Compare versions using the `packaging` library for accurate comparison (e.g., `1.10.0` > `1.9.0`).
 *   Log if an update is available. This check is non-blocking and will not prevent the script from running.
 
