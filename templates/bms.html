@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>BMS Compact View</title>
+	<style>
+		html {
+			box-sizing: border-box;
+			font-size: 14px;
+		}
+
+		*,
+		*:before,
+		*:after {
+			box-sizing: inherit;
+		}
+
+		:root {
+			--bg-primary: #ffeb99;
+			--bg-secondary: #fffacd;
+			--bg-tertiary: rgba(211, 84, 0, 0.05);
+			--text-primary: #d35400;
+			--text-secondary: #555555;
+			--text-accent: #d35400;
+			--border-color: rgba(211, 84, 0, 0.2);
+			--cell-border-default: #d35400;
+			--cell-default-bg: #fdf5e6;
+			--icon-color: #e67e22;
+			--status-good-color: #27ae60;
+			--status-warning-color: #f39c12;
+			--status-critical-color: #c0392b;
+			--status-info-color: #2980b9;
+			--font-family: "Poppins", Arial, sans-serif;
+			--cell-text-color: #333;
+			--cell-text-shadow: none;
+			--cell-cap-bg: #f1c40f;
+			--cell-cap-border: #d35400;
+		}
+
+		[data-theme="dark"] {
+			--bg-primary: #000000;
+			--bg-secondary: rgba(35, 35, 35, 0.9);
+			--bg-tertiary: rgba(52, 152, 219, 0.1);
+			--text-primary: #ecf0f1;
+			--text-secondary: #bdc3c7;
+			--text-accent: #3498db;
+			--border-color: rgba(52, 152, 219, 0.25);
+			--cell-border-default: #3498db;
+			--cell-default-bg: #2c3e50;
+			--icon-color: #3498db;
+			--status-good-color: #178344;
+			--status-warning-color: #856b03;
+			--status-critical-color: #c41401;
+			--status-info-color: #3498db;
+			--cell-text-color: #ecf0f1;
+			--cell-text-shadow: 0 0 2px black;
+			--cell-cap-bg: #3498db;
+			--cell-cap-border: #2980b9;
+		}
+
+		html,
+		body {
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+		}
+
+		body {
+			font-family: var(--font-family);
+			background-color: transparent;
+			color: var(--text-primary);
+			display: flex;
+			height: 100vh;
+			font-size: 1rem;
+		}
+
+		.bms-dashboard {
+			background-color: transparent;
+			top: 0px;
+			width: 100%;
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+			border: none;
+		}
+
+		.summary-data-top,
+		.summary-data-bottom {
+			display: grid;
+			grid-template-columns: 1fr 1.2fr 1.2fr;
+			gap: 2px;
+			margin-bottom: 2px;
+			padding: 2px;
+			background-color: var(--bg-tertiary);
+			border-radius: 4px;
+			flex-shrink: 0;
+		}
+
+		.summary-data-bottom {
+			margin-top: auto;
+			padding-top: 4px;
+		}
+
+		.summary-item {
+			padding: 4px 8px;
+			border-radius: 4px;
+			font-size: 0.9em;
+			display: flex;
+			align-items: center;
+			border-left: 4px solid transparent;
+			min-width: 0;
+			background-color: var(--bg-secondary);
+			border: 1px solid var(--border-color);
+		}
+
+		.summary-item .icon {
+			margin-right: 6px;
+			font-size: 1.1em;
+			color: var(--icon-color);
+			flex-shrink: 0;
+		}
+
+		.summary-item .label {
+			color: var(--text-secondary);
+			margin-right: auto;
+			white-space: nowrap;
+		}
+
+		.summary-item .value {
+			font-weight: bold;
+			color: var(--text-primary);
+			text-align: right;
+			white-space: normal;
+			word-break: break-all;
+			flex-shrink: 1;
+		}
+
+		/* Status colors */
+		.summary-item.status-good {
+			border-left-color: var(--status-good-color);
+		}
+
+		.summary-item.status-good .value {
+			color: var(--status-good-color);
+		}
+
+		.summary-item.status-warning {
+			border-left-color: var(--status-warning-color);
+		}
+
+		.summary-item.status-warning .value {
+			color: var(--status-warning-color);
+		}
+
+		.summary-item.status-critical {
+			border-left-color: var(--status-critical-color);
+		}
+
+		.summary-item.status-critical .value {
+			color: var(--status-critical-color);
+		}
+
+		.summary-item.status-info {
+			border-left-color: var(--status-info-color);
+		}
+
+		.summary-item.status-info .value {
+			color: var(--status-info-color);
+		}
+
+		.summary-item.status-neutral .value {
+			color: var(--text-primary);
+		}
+
+		.cell-grid-wrapper {
+			flex-grow: 1;
+			min-height: 0;
+			overflow-y: auto;
+			display: flex;
+			align-items: stretch;
+			justify-content: center;
+			padding: 4px 0;
+		}
+
+		#battery-viewer-container {
+			display: grid;
+			grid-template-columns: repeat(8, 1fr);
+			grid-template-rows: repeat(2, 1fr);
+			gap: 5px;
+			width: 100%;
+			height: 100%;
+		}
+
+		.cell {
+			border: 1px solid var(--cell-border-default);
+			border-radius: 4px 4px 2px 2px;
+			padding: 3px 2px;
+			text-align: center;
+			position: relative;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			background-color: var(--cell-default-bg);
+			transition: background-color 0.5s ease-in-out;
+			min-height: 50px;
+		}
+
+		.cell::before {
+			content: "";
+			position: absolute;
+			top: -4%;
+			left: 50%;
+			transform: translateX(-50%);
+			width: 60%;
+			height: 8%;
+			background-color: var(--cell-cap-bg);
+			border: 1px solid var(--cell-cap-border);
+			border-bottom: none;
+			border-radius: 2px 2px 0 0;
+		}
+
+		.cell-header {
+			font-size: 0.7em;
+			color: var(--cell-text-color);
+			text-shadow: var(--cell-text-shadow);
+			line-height: 1.1;
+		}
+
+		.cell-voltage {
+			font-size: 0.9em;
+			font-weight: bold;
+			color: var(--cell-text-color);
+			text-shadow: var(--cell-text-shadow);
+			line-height: 1.1;
+			margin-bottom: 2px;
+		}
+
+		.indicator {
+			position: absolute;
+			padding: 0px;
+			border-radius: 2px;
+			font-size: 0.7em;
+			font-weight: bold;
+			color: white;
+			line-height: 1;
+			width: 1.6em;
+			height: 1.6em;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			z-index: 1;
+		}
+
+		.indicator.high {
+			top: 2px;
+			left: 2px;
+			background-color: var(--status-critical-color);
+		}
+
+		.indicator.low {
+			top: 2px;
+			left: 2px;
+			background-color: var(--status-info-color);
+		}
+
+		.indicator.balancing {
+			bottom: 2px;
+			right: 2px;
+			background-color: var(--status-warning-color);
+			animation: pulse-indicator 1.5s infinite;
+		}
+
+		@keyframes pulse-indicator {
+			0% {
+				box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-warning-color) 60%, transparent);
+			}
+
+			70% {
+				box-shadow: 0 0 0 6px color-mix(in srgb, var(--status-warning-color) 0%, transparent);
+			}
+
+			100% {
+				box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-warning-color) 0%, transparent);
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<div class="bms-dashboard">
+		<div class="summary-data-top">
+			<div class="summary-item" id="battery-flow"><span class="icon">🔋</span><span class="label">Flow:</span>
+				<span class="value">--</span>
+			</div>
+			<div class="summary-item" id="pack-voltage"><span class="icon">⚡</span><span class="label">Pack V:</span>
+				<span class="value">-- V</span>
+			</div>
+			<div class="summary-item" id="port-voltage"><span class="icon">🔌</span><span class="label">Port V:</span>
+				<span class="value">-- V</span>
+			</div>
+			<div class="summary-item" id="remaining-ah"><span class="icon">⏳</span><span class="label">Ah Rem:</span>
+				<span class="value">-- Ah</span>
+			</div>
+			<div class="summary-item" id="soc"><span class="icon">📊</span><span class="label">SOC:</span> <span
+					class="value">-- %</span></div>
+			<div class="summary-item" id="soh"><span class="icon">❤️</span><span class="label">SOH:</span> <span
+					class="value">-- %</span></div>
+			<div class="summary-item" id="cycles"><span class="icon">🔄</span><span class="label">Cycles:</span> <span
+					class="value">--</span></div>
+			<div class="summary-item" id="bms-temp"><span class="icon">🌡️</span><span class="label">Temps:</span> <span
+					class="value">--</span></div>
+			<div class="summary-item" id="total-capacity"><span class="icon">📦</span><span class="label">Total
+					Ah:</span> <span class="value">-- Ah</span></div>
+		</div>
+
+		<div class="cell-grid-wrapper">
+			<div id="battery-viewer-container"></div>
+		</div>
+
+		<div class="summary-data-bottom">
+			<div class="summary-item" id="delta-cell-voltage"><span class="icon">↔️</span><span class="label">ΔV
+					Cell:</span> <span class="value">-- V</span></div>
+			<div class="summary-item" id="highest-cell-info"><span class="icon">🔼</span><span class="label">Hi
+					Cell:</span> <span class="value">--</span></div>
+			<div class="summary-item" id="lowest-cell-info"><span class="icon">🔽</span><span class="label">Lo
+					Cell:</span> <span class="value">--</span></div>
+			<div class="summary-item" id="average-cell-voltage"><span class="icon">⌀</span><span class="label">Avg
+					Cell:</span> <span class="value">-- V</span></div>
+			<div class="summary-item" id="min-pack-voltage-config"><span class="icon">⚙️</span><span class="label">Min
+					Pack:</span> <span class="value">-- V</span></div>
+			<div class="summary-item" id="max-pack-voltage-config"><span class="icon">⚙️</span><span class="label">Max
+					Pack:</span> <span class="value">-- V</span></div>
+		</div>
+	</div>
+	<script>
+		document.addEventListener('DOMContentLoaded', () => {
+			const htmlElement = document.documentElement;
+			const container = document.getElementById('battery-viewer-container');
+
+			const bmsDashboard = document.querySelector('.bms-dashboard');
+			const BASE_FONT_SIZE = 12;
+			const BASE_CONTAINER_WIDTH = 600;
+			const MIN_FONT_SIZE = 9;
+			const MAX_FONT_SIZE = 14;
+
+			const debounce = (func, wait) => {
+				let timeout;
+				return function executedFunction(...args) {
+					const later = () => {
+						clearTimeout(timeout);
+						func(...args);
+					};
+					clearTimeout(timeout);
+					timeout = setTimeout(later, wait);
+				};
+			};
+
+			const updateFontSize = () => {
+				if (!bmsDashboard) return;
+				const currentWidth = bmsDashboard.clientWidth;
+				const scaleFactor = (currentWidth / BASE_CONTAINER_WIDTH) * 1.1;
+				let newSize = BASE_FONT_SIZE * scaleFactor;
+				const clampedSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, newSize));
+				htmlElement.style.fontSize = `${clampedSize}px`;
+			};
+
+			window.addEventListener('resize', debounce(updateFontSize, 50));
+
+			const NUM_CELLS = 16;
+			const VOLTAGE_THRESHOLDS_CELL = {
+				CRITICAL_LOW: 2.80,
+				LOW_WARN: 3.15,
+				NORMAL_HIGH_END: 3.45,
+				HIGH_WARN: 3.55,
+				CRITICAL_HIGH: 3.65
+			};
+			const GRADIENT_COLORS_DARK = {
+				'voltage-critical-low': {
+					start: '#ef4444',
+					end: '#b91c1c'
+				},
+				'voltage-low-warn': {
+					start: '#f59e0b',
+					end: '#b45309'
+				},
+				'voltage-normal': {
+					start: '#10b981',
+					end: '#047857'
+				},
+				'voltage-high-warn': {
+					start: '#facc15',
+					end: '#ca8a04'
+				},
+				'voltage-critical-high': {
+					start: '#dc2626',
+					end: '#991b1b'
+				}
+			};
+			const GRADIENT_COLORS_LIGHT = {
+				'voltage-critical-low': {
+					start: '#fecaca',
+					end: '#f87171'
+				},
+				'voltage-low-warn': {
+					start: '#fed7aa',
+					end: '#fb923c'
+				},
+				'voltage-normal': {
+					start: '#a7f3d0',
+					end: '#34d399'
+				},
+				'voltage-high-warn': {
+					start: '#fef08a',
+					end: '#facc15'
+				},
+				'voltage-critical-high': {
+					start: '#ef4444',
+					end: '#dc2626'
+				}
+			};
+
+			let currentGradientColors = GRADIENT_COLORS_DARK;
+			let cellElements = [];
+			let cellData = Array(NUM_CELLS).fill(null).map((_, i) => ({
+				id: i + 1,
+				voltage: 3.200,
+				balancing: false
+			}));
+			let summaryData = {
+				batteryFlow: {
+					status: "Idle",
+					power: 0,
+					icon: "🔋"
+				},
+				packVoltage: 51.2,
+				portVoltage: 51.2,
+				remainingAh: 100,
+				soc: 75,
+				soh: 99,
+				cycles: 50,
+				bmsTemp: 25,
+				totalCapacity: 200,
+				deltaCellVoltage: 0.000,
+				averageCellVoltage: 3.200,
+				highestCell: {
+					ids: [],
+					voltage: 0
+				},
+				lowestCell: {
+					ids: [],
+					voltage: 0
+				},
+				minPackVoltageConfig: 44.8,
+				maxPackVoltageConfig: 58.4
+			};
+			const SUMMARY_THRESHOLDS = {
+				packVoltage: {
+					good: [50.0, 56.0],
+					warningLow: [48.0, 49.9],
+					warningHigh: [56.1, 57.5],
+					criticalLow: 47.9,
+					criticalHigh: 57.6
+				},
+				portVoltage: {
+					good: [50.0, 56.0],
+					warningLow: [48.0, 49.9],
+					warningHigh: [56.1, 57.5],
+					criticalLow: 47.9,
+					criticalHigh: 57.6
+				},
+				remainingAh: {
+					good: [80, Infinity],
+					warning: [40, 79.9],
+					critical: [-Infinity, 39.9]
+				},
+				soc: {
+					good: [50, 100],
+					warning: [20, 49.9],
+					critical: [-Infinity, 19.9]
+				},
+				soh: {
+					good: [95, 100],
+					warning: [90, 94.9],
+					critical: [-Infinity, 89.9]
+				},
+				bmsTemp: {
+					good: [10, 40],
+					warningLow: [0, 9.9],
+					warningHigh: [40.1, 45],
+					criticalLow: -0.1,
+					criticalHigh: 45.1
+				},
+				deltaCellVoltage: {
+					good: [0, 0.020],
+					warning: [0.021, 0.050],
+					critical: [0.051, Infinity]
+				}
+			};
+
+			function setTheme(themeName) {
+				htmlElement.setAttribute('data-theme', themeName);
+				currentGradientColors = (themeName === 'light') ? GRADIENT_COLORS_LIGHT : GRADIENT_COLORS_DARK;
+				renderAllData();
+			}
+
+			function getCellVoltageCategory(voltage) {
+				if (voltage < VOLTAGE_THRESHOLDS_CELL.CRITICAL_LOW) return 'voltage-critical-low';
+				if (voltage < VOLTAGE_THRESHOLDS_CELL.LOW_WARN) return 'voltage-low-warn';
+				if (voltage <= VOLTAGE_THRESHOLDS_CELL.NORMAL_HIGH_END) return 'voltage-normal';
+				if (voltage < VOLTAGE_THRESHOLDS_CELL.CRITICAL_HIGH) return 'voltage-high-warn';
+				return 'voltage-critical-high';
+			}
+
+			function applySummaryItemStatus(elementId, value, thresholdsConfig) {
+				const itemElement = document.getElementById(elementId);
+				if (!itemElement) return;
+				itemElement.className = 'summary-item status-neutral';
+				if (!thresholdsConfig || Object.keys(thresholdsConfig).length === 0) return;
+				if (thresholdsConfig.good && thresholdsConfig.warning && thresholdsConfig.critical && thresholdsConfig.critical[0] === -Infinity) {
+					if (value >= thresholdsConfig.good[0]) itemElement.className = 'summary-item status-good';
+					else if (value >= thresholdsConfig.warning[0]) itemElement.className = 'summary-item status-warning';
+					else itemElement.className = 'summary-item status-critical';
+				} else if (thresholdsConfig.good && thresholdsConfig.warning && thresholdsConfig.critical && thresholdsConfig.critical[1] === Infinity) {
+					if (value <= thresholdsConfig.good[1]) itemElement.className = 'summary-item status-good';
+					else if (value <= thresholdsConfig.warning[1]) itemElement.className = 'summary-item status-warning';
+					else itemElement.className = 'summary-item status-critical';
+				} else if (thresholdsConfig.good && thresholdsConfig.warningLow && thresholdsConfig.warningHigh && thresholdsConfig.criticalLow !== undefined && thresholdsConfig.criticalHigh !== undefined) {
+					if (value < thresholdsConfig.criticalLow) itemElement.className = 'summary-item status-critical';
+					else if (value >= thresholdsConfig.warningLow[0] && value <= thresholdsConfig.warningLow[1]) itemElement.className = 'summary-item status-warning';
+					else if (value >= thresholdsConfig.good[0] && value <= thresholdsConfig.good[1]) itemElement.className = 'summary-item status-good';
+					else if (value >= thresholdsConfig.warningHigh[0] && value <= thresholdsConfig.warningHigh[1]) itemElement.className = 'summary-item status-warning';
+					else if (value > thresholdsConfig.criticalHigh) itemElement.className = 'summary-item status-critical';
+				}
+			}
+
+			function createCellElement(cData) {
+				const cellDiv = document.createElement('div');
+				cellDiv.classList.add('cell');
+				cellDiv.dataset.cellId = cData.id;
+				const voltageDisplay = document.createElement('div');
+				voltageDisplay.classList.add('cell-voltage');
+				const header = document.createElement('div');
+				header.classList.add('cell-header');
+				header.textContent = `C${cData.id}`;
+				cellDiv.appendChild(voltageDisplay);
+				cellDiv.appendChild(header);
+				return cellDiv;
+			}
+
+			function renderAllData() {
+				let minV = Infinity,
+					maxV = -Infinity,
+					minVIds = [],
+					maxVIds = [],
+					totalV = 0;
+				cellData.forEach(cell => {
+					totalV += cell.voltage;
+					if (cell.voltage < minV) {
+						minV = cell.voltage;
+						minVIds = [cell.id];
+					} else if (cell.voltage === minV) {
+						minVIds.push(cell.id);
+					}
+					if (cell.voltage > maxV) {
+						maxV = cell.voltage;
+						maxVIds = [cell.id];
+					} else if (cell.voltage === maxV) {
+						maxVIds.push(cell.id);
+					}
+				});
+				summaryData.averageCellVoltage = NUM_CELLS > 0 ? totalV / NUM_CELLS : 0;
+				const allSameV = cellData.every(c => c.voltage === cellData[0].voltage);
+				summaryData.deltaCellVoltage = (NUM_CELLS > 0 && !allSameV) ? maxV - minV : 0;
+				summaryData.highestCell = {
+					ids: maxVIds,
+					voltage: maxV
+				};
+				summaryData.lowestCell = {
+					ids: minVIds,
+					voltage: minV
+				};
+				cellElements.forEach((cellDiv, index) => {
+					const currentCell = cellData[index];
+					cellDiv.querySelector('.cell-voltage').textContent = `${currentCell.voltage.toFixed(3)}V`;
+					const VCategory = getCellVoltageCategory(currentCell.voltage);
+					const gradConf = currentGradientColors[VCategory];
+
+					if (gradConf) {
+						cellDiv.style.backgroundColor = gradConf.start;
+						cellDiv.style.backgroundImage = `linear-gradient(to bottom, ${gradConf.start}, ${gradConf.end})`;
+					} else {
+						const defaultCellBg = getComputedStyle(document.documentElement).getPropertyValue('--cell-default-bg').trim();
+						cellDiv.style.backgroundColor = defaultCellBg;
+						cellDiv.style.backgroundImage = 'none';
+					}
+					cellDiv.querySelectorAll('.indicator').forEach(ind => ind.remove());
+					if (!allSameV) {
+						if (summaryData.highestCell.ids.includes(currentCell.id)) {
+							const hi = document.createElement('span');
+							hi.className = 'indicator high';
+							hi.textContent = '▲';
+							cellDiv.appendChild(hi);
+						}
+						if (summaryData.lowestCell.ids.includes(currentCell.id)) {
+							const lo = document.createElement('span');
+							lo.className = 'indicator low';
+							lo.textContent = '▼';
+							cellDiv.appendChild(lo);
+						}
+					}
+					if (currentCell.balancing) {
+						const bal = document.createElement('span');
+						bal.className = 'indicator balancing';
+						bal.textContent = 'B';
+						cellDiv.appendChild(bal);
+					}
+				});
+				let flowText = summaryData.batteryFlow.status;
+				let flowIcon = "🔋";
+				if (summaryData.batteryFlow.status === "Charging") flowIcon = "🔌";
+				else if (summaryData.batteryFlow.status === "Discharging") flowIcon = "💨";
+				else if (summaryData.batteryFlow.status === "Idle") flowIcon = "⏸️";
+				if (summaryData.batteryFlow.power !== 0) flowText = `${Math.abs(summaryData.batteryFlow.power).toFixed(0)}W`;
+				else flowText = "Idle";
+				document.querySelector('#battery-flow .icon').textContent = flowIcon;
+				document.querySelector('#battery-flow .value').textContent = flowText;
+				applySummaryItemStatus('battery-flow', summaryData.batteryFlow.power, {
+					info: [-Infinity, Infinity]
+				});
+				document.querySelector('#pack-voltage .value').textContent = `${summaryData.packVoltage.toFixed(1)}V`;
+				applySummaryItemStatus('pack-voltage', summaryData.packVoltage, SUMMARY_THRESHOLDS.packVoltage);
+				document.querySelector('#port-voltage .value').textContent = `${summaryData.portVoltage.toFixed(1)}V`;
+				applySummaryItemStatus('port-voltage', summaryData.portVoltage, SUMMARY_THRESHOLDS.portVoltage);
+				document.querySelector('#remaining-ah .value').textContent = `${summaryData.remainingAh.toFixed(0)}Ah`;
+				applySummaryItemStatus('remaining-ah', summaryData.remainingAh, SUMMARY_THRESHOLDS.remainingAh);
+				document.querySelector('#soc .value').textContent = `${summaryData.soc.toFixed(0)}%`;
+				applySummaryItemStatus('soc', summaryData.soc, SUMMARY_THRESHOLDS.soc);
+				document.querySelector('#soh .value').textContent = `${summaryData.soh.toFixed(0)}%`;
+				applySummaryItemStatus('soh', summaryData.soh, SUMMARY_THRESHOLDS.soh);
+				document.querySelector('#cycles .value').textContent = summaryData.cycles.toFixed(0);
+				applySummaryItemStatus('cycles', summaryData.cycles, {});
+				const tempValueEl = document.querySelector('#bms-temp .value');
+				const temps = summaryData.bmsTemperatures;
+				if (Array.isArray(temps) && temps.length > 0) {
+					const tempMin = Math.min(...temps);
+					const tempMax = Math.max(...temps);
+					tempValueEl.textContent = `${tempMin.toFixed(1)}°C / ${tempMax.toFixed(1)}°C`;
+					applySummaryItemStatus('bms-temp', tempMax, SUMMARY_THRESHOLDS.bmsTemp);
+				} else {
+					tempValueEl.textContent = "--";
+					applySummaryItemStatus('bms-temp', null, {});
+				}
+				document.querySelector('#total-capacity .value').textContent = `${summaryData.totalCapacity.toFixed(0)}Ah`;
+				applySummaryItemStatus('total-capacity', summaryData.totalCapacity, {});
+				document.querySelector('#delta-cell-voltage .value').textContent = `${summaryData.deltaCellVoltage.toFixed(3)}V`;
+				applySummaryItemStatus('delta-cell-voltage', summaryData.deltaCellVoltage, SUMMARY_THRESHOLDS.deltaCellVoltage);
+				let hiCellTxt = "--";
+				if (NUM_CELLS > 0 && !allSameV && summaryData.highestCell.ids && summaryData.highestCell.ids.length > 0) {
+					hiCellTxt = summaryData.highestCell.ids.join(',');
+				}
+				document.querySelector('#highest-cell-info .value').textContent = hiCellTxt;
+				applySummaryItemStatus('highest-cell-info', summaryData.highestCell.voltage, {});
+				let loCellTxt = "--";
+				if (NUM_CELLS > 0 && !allSameV && summaryData.lowestCell.ids && summaryData.lowestCell.ids.length > 0) {
+					loCellTxt = summaryData.lowestCell.ids.join(',');
+				}
+				document.querySelector('#lowest-cell-info .value').textContent = loCellTxt;
+				applySummaryItemStatus('lowest-cell-info', summaryData.lowestCell.voltage, {});
+				document.querySelector('#average-cell-voltage .value').textContent = `${summaryData.averageCellVoltage.toFixed(2)}V`;
+				applySummaryItemStatus('average-cell-voltage', summaryData.averageCellVoltage, {});
+				document.querySelector('#min-pack-voltage-config .value').textContent = `${summaryData.minPackVoltageConfig.toFixed(1)}V`;
+				applySummaryItemStatus('min-pack-voltage-config', summaryData.minPackVoltageConfig, {});
+				document.querySelector('#max-pack-voltage-config .value').textContent = `${summaryData.maxPackVoltageConfig.toFixed(1)}V`;
+				applySummaryItemStatus('max-pack-voltage-config', summaryData.maxPackVoltageConfig, {});
+			}
+
+			function initializeViewer() {
+				container.innerHTML = '';
+				cellElements = [];
+				cellData.forEach(cDt => {
+					const cEl = createCellElement(cDt);
+					container.appendChild(cEl);
+					cellElements.push(cEl);
+				});
+				updateFontSize();
+				renderAllData();
+			}
+
+			window.bmsViewer = {
+				updateData: function (newData) {
+					if (newData && newData.cells && newData.cells.length > 0) {
+						cellData = newData.cells.map((d, i) => ({
+							id: d.id !== undefined ? d.id : i + 1,
+							voltage: d.voltage,
+							balancing: d.balancing
+						}));
+					}
+					if (newData && newData.summary) {
+						summaryData = {
+							...summaryData,
+							...newData.summary
+						};
+					}
+					renderAllData();
+				},
+				setTheme: function (themeName) {
+					setTheme(themeName);
+				}
+			};
+
+			initializeViewer();
+		});
+	</script>
+</body>
+
+</html>

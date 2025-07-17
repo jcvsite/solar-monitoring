@@ -1,0 +1,276 @@
+# =============================================================
+# Solar Monitoring Configuration File - EXAMPLE TEMPLATE
+# =============================================================
+# 
+# INSTRUCTIONS:
+# 1. Copy this file to 'config.ini'
+# 2. Update all the settings below with your specific hardware details
+# 3. Replace placeholder values with your actual device IPs, ports, etc.
+#
+
+[GENERAL]
+# List of plugin instances to load, comma-separated.
+# Each name must correspond to a [PLUGIN_instance_name] section below. 
+# Add multiple plugins below separated by comma (Eg. INV_Solis, BMS_Seplos_v2)
+PLUGIN_INSTANCES = INV_Solis
+
+# How often each plugin attempts a full data poll (in seconds).
+POLL_INTERVAL = 5
+
+# Your local timezone identifier for correct timestamps.
+# Examples: "UTC", "Europe/London", "America/New_York", "Asia/Shanghai"
+# See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+LOCAL_TIMEZONE = UTC
+
+# Set to false to disable checking for new script versions on startup.
+CHECK_FOR_UPDATES = true
+
+# Maximum number of times the watchdog will attempt to restart a failed plugin before giving up.
+MAX_RECONNECT_ATTEMPTS = 5
+
+
+[INVERTER_SYSTEM]
+# These values define your physical system and are used for calculations and filtering.
+
+# Total MPPT of inverter
+DEFAULT_MPPT_COUNT = 2
+
+# Total peak DC power of your solar array in Watts.
+PV_INSTALLED_CAPACITY_W = 6600.0
+
+# Inverter's maximum continuous AC power output in Watts.
+INVERTER_MAX_AC_POWER_W = 6000.0
+
+# Usable energy capacity of your battery bank in kWh (kilowatt-hours).
+BATTERY_USABLE_CAPACITY_KWH = 15.36
+
+# Battery's maximum continuous charge power in Watts.
+BATTERY_MAX_CHARGE_POWER_W = 5000.0
+
+# Battery's maximum continuous discharge power in Watts.
+BATTERY_MAX_DISCHARGE_POWER_W = 6000.0
+
+
+# =============================================================
+# PLUGIN CONFIGURATION
+# =============================================================
+
+###################### Inverter Plugins #######################
+
+[PLUGIN_INV_Solis]
+# Configures the Solis Inverter plugin instance.
+plugin_type = inverter.solis_modbus_plugin
+
+# Choose 'tcp' for network adapters or 'serial' for direct RS485 connection
+connection_type = serial
+
+# --- TCP Settings (only used if connection_type = tcp) ---
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 1
+
+# Inverter's maximum continuous AC power output in Watts (from INVERTER_SYSTEM section)
+static_rated_power_ac_watts = 6000.0
+
+# --- Serial Settings (only used if connection_type = serial) ---
+# On Windows (e.g., COM3, COM4) / On Linux (e.g., /dev/ttyUSB0, /dev/ttyAMA0)
+serial_port = COM4
+baud_rate = 9600
+parity = N
+stopbits = 1
+bytesize = 8
+
+# --- Optional Parameters (uncomment to override plugin defaults) ---
+# Increase timeout for better network resilience
+# modbus_timeout_seconds = 8
+# Reduce delay between reads for faster reconnection detection
+# inter_read_delay_ms = 500
+# Increase retries for better reliability during network issues
+# max_read_retries_per_group = 3
+
+[PLUGIN_INV_Deye]
+plugin_type = inverter.deye_sunsynk_plugin
+
+# Choose 'tcp' for network adapters or 'serial' for direct RS485 connection
+connection_type = tcp
+
+# --- TCP Settings (only used if connection_type = tcp) ---
+tcp_host = 192.168.1.100
+tcp_port = 8899
+slave_address = 1
+
+# *** CRITICAL SETTING FOR DEYE/SUNSYNK ***
+# Choose the model series that matches your inverter.
+# Options are:
+#   modern_hybrid   - For newer single-phase hybrids (like Sunsynk 5K, Deye SUN-5K-SG04LP1). (Most Common)
+#   legacy_hybrid   - For older single-phase Deye hybrids with a different register map.
+#   three_phase     - For three-phase models (like Deye SG01HP3).
+deye_model_series = modern_hybrid
+
+####################### BMS Plugins #######################
+
+[PLUGIN_BMS_Seplos_v2]
+# Configures the Seplos BMS V2 plugin instance.
+plugin_type = battery.seplos_bms_v2_plugin
+
+# Choose 'tcp' for network adapters or 'serial' for direct connection
+seplos_connection_type = serial
+
+# --- TCP Settings (only used if seplos_connection_type = tcp) ---
+seplos_tcp_host = 192.168.1.100
+seplos_tcp_port = 8888
+seplos_pack_address = 0
+
+# --- Optional Parameters (uncomment to override plugin defaults) ---
+# Increase timeout to allow for network latency
+# seplos_tcp_timeout = 4.0
+# Increase delay between commands to improve reliability with slow connections
+# seplos_inter_command_delay_ms = 300
+
+[PLUGIN_BMS_Seplos_v3]
+# Configures the Seplos BMS V3 plugin instance.
+plugin_type = battery.seplos_bms_v3_plugin
+
+# Choose 'tcp' for network adapters or 'serial' for direct connection
+connection_type = serial
+
+# --- TCP Settings (only used if connection_type = tcp) ---
+tcp_host = 192.168.1.101
+tcp_port = 8899
+# This is usually 0 for the first battery pack when using Seplos software.
+slave_address = 0
+
+[PLUGIN_BMS_JK]
+# Configures the JK BMS Modbus plugin instance.
+plugin_type = battery.jk_bms_plugin
+
+# Choose 'tcp' for network adapters or 'serial' for direct RS485 connection
+connection_type = serial
+
+# --- Serial Settings (only used if connection_type = serial) ---
+serial_port = COM4              ; <-- On Windows (e.g., COM3, COM4)
+# serial_port = /dev/ttyUSB0    ; <-- On Linux (e.g., /dev/ttyUSB0, /dev/ttyAMA0)
+baud_rate = 115200              ; <-- Usually 115200 for JK BMS
+slave_address = 1
+
+# =============================================================
+# SERVICE CONFIGURATION
+# =============================================================
+
+[LOGGING]
+# Log level for the application (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+LOG_LEVEL = INFO
+# Set to True to create a "solar_monitoring.log" file.
+LOG_TO_FILE = True
+
+
+[MQTT]
+# Controls whether MQTT features are enabled.
+ENABLE_MQTT = false
+MQTT_HOST = your.mqtt.broker.ip
+MQTT_PORT = 1883
+MQTT_USERNAME = your_mqtt_username
+MQTT_PASSWORD = your_mqtt_password
+
+# Set to true to enable TLS for the MQTT connection.
+ENABLE_MQTT_TLS = false
+
+MQTT_TOPIC = solar
+# How often to publish data updates to MQTT (in seconds).
+MQTT_UPDATE_INTERVAL = 5
+# Enable Home Assistant MQTT Auto-Discovery.
+ENABLE_HA_DISCOVERY = True
+HA_DISCOVERY_PREFIX = homeassistant
+# Time in seconds a plugin can be silent before the system is marked 'offline' for MQTT.
+MQTT_STALE_DATA_TIMEOUT_SECONDS = 900
+
+
+[TUYA]
+# Control a Tuya-based smart plug (e.g., for a cooling fan).
+ENABLE_TUYA = False
+TUYA_DEVICE_ID = your_device_id_here
+TUYA_LOCAL_KEY = your_local_key_here
+# IP address of the device ("Auto" for discovery, or a specific IP).
+TUYA_IP_ADDRESS = Auto
+# Protocol version for the device (usually 3.3 or 3.4).
+TUYA_VERSION = 3.4
+# Temperature (°C) to turn the device ON.
+TEMP_THRESHOLD_ON = 43.0
+# Temperature (°C) to turn the device OFF.
+TEMP_THRESHOLD_OFF = 42.0
+
+
+[CONSOLE_DASHBOARD]
+ENABLE_DASHBOARD = True
+DASHBOARD_UPDATE_INTERVAL = 1
+
+
+[WEB_DASHBOARD]
+ENABLE_WEB_DASHBOARD = True
+WEB_DASHBOARD_PORT = 8081
+# Set to true to enable HTTPS for the web dashboard.
+ENABLE_HTTPS = false
+# How often the web UI receives live updates (in seconds).
+WEB_UPDATE_INTERVAL = 2.0
+# Secret key for Flask session management. CHANGE THIS to a long, random string!
+FLASK_SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_STRING_FOR_SECURITY"
+
+[WEATHER]
+; Enable or disable the weather widget on the dashboard
+ENABLE_WEATHER_WIDGET = True
+; Use browser's geolocation to find location automatically. Falls back to default if denied.
+WEATHER_USE_AUTOMATIC_LOCATION = False
+; Default location to use if automatic detection is off or fails.
+WEATHER_DEFAULT_LATITUDE = 40.7128
+WEATHER_DEFAULT_LONGITUDE = -74.0060
+; The initial zoom level for the weather map (e.g., 5 is country-level, 10 is city-level)
+WEATHER_MAP_ZOOM_LEVEL = 5
+; Temperature unit: "celsius" or "fahrenheit"
+WEATHER_TEMPERATURE_UNIT = celsius
+; How often to refresh weather data, in minutes.
+WEATHER_UPDATE_INTERVAL_MINUTES = 15
+
+[DATABASE]
+DB_FILE = solis_history.db
+; 720 hours = 30 days
+HISTORY_MAX_AGE_HOURS = 720
+; 60 seconds is a good default. Increase to 120 or 300 if you want an even smaller DB.
+POWER_HISTORY_INTERVAL_SECONDS = 60
+# Power (in Watts) below which energy flow is considered zero/noise in hourly calculations.
+HOURLY_SUMMARY_POWER_THRESHOLD_W = 2.0
+
+[WATCHDOG]
+# Time (in seconds) of polling inactivity before the watchdog restarts a plugin.
+WATCHDOG_TIMEOUT = 120
+# Grace period (in seconds) after script start before the watchdog becomes active.
+WATCHDOG_GRACE_PERIOD = 30
+# Maximum number of times the watchdog will attempt to restart a failed plugin before giving up.
+MAX_PLUGIN_RELOAD_ATTEMPTS = 3
+
+[FILTER]
+# Absolute maximum daily energy limits (in kWh) to prevent sensor errors and unit conversion issues.
+# Adjust these values based on your specific system requirements.
+
+# Maximum daily grid import energy (kWh). Typical residential: 50-150 kWh/day
+DAILY_LIMIT_GRID_IMPORT_KWH = 100.0
+
+# Maximum daily grid export energy (kWh). Typical residential: 20-80 kWh/day  
+DAILY_LIMIT_GRID_EXPORT_KWH = 50.0
+
+# Maximum daily battery charge energy (kWh). Should match your battery capacity and charge rate
+DAILY_LIMIT_BATTERY_CHARGE_KWH = 50.0
+
+# Maximum daily battery discharge energy (kWh). Should match your battery capacity and discharge rate
+DAILY_LIMIT_BATTERY_DISCHARGE_KWH = 50.0
+
+# Maximum daily PV generation (kWh). Should be based on your solar array size and location
+DAILY_LIMIT_PV_GENERATION_KWH = 80.0
+
+# Maximum daily load consumption (kWh). Typical residential: 80-200 kWh/day
+DAILY_LIMIT_LOAD_CONSUMPTION_KWH = 120.0
+
+[TLS]
+# Paths to your SSL/TLS certificate files.
+TLS_CA_CERTS_PATH = /etc/ssl/certs/ca-certificates.crt
+TLS_CERT_PATH = /path/to/your/client.crt
+TLS_KEY_PATH = /path/to/your/client.key

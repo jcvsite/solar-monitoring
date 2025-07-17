@@ -1,0 +1,52 @@
+# requirements.txt for Solar Monitoring Framework
+
+# --- Build System & Core Dependencies ---
+# These MUST be listed first to ensure pip can build other packages.
+setuptools==69.0.2
+wheel==0.42.0
+tzdata==2023.4
+
+# Greenlet is a special case for the embeddable package.
+# It requires a C++ compiler. We will install it manually from a pre-compiled wheel.
+greenlet==3.0.3
+
+# Core Modbus communication library
+pymodbus==3.6.2
+
+# Library for serial port communication (used by Seplos plugin and Modbus RTU)
+pyserial==3.5
+
+# MQTT client library (Version 1.6+ needed for Callback API v2 used in script)
+paho-mqtt==1.6.1
+
+# Robust version comparison (for GitHub update check)
+packaging==23.2
+
+
+# --- Optional Service Dependencies ---
+
+# Web Dashboard: Flask web framework
+Flask==2.3.3
+
+# Web Dashboard: WebSocket communication
+Flask-SocketIO==5.3.6
+
+# Web Dashboard: Async library required by Flask-SocketIO
+eventlet==0.33.3
+
+# Tuya Control: Tuya device control library
+# Install if you use the Tuya smart plug feature.
+tinytuya==1.14.0
+
+# Network Diagnostics: Used for ICMP ping checks to diagnose connection issues.
+# Recommended for TCP-based plugins.
+ping3==4.0.4
+
+# Console UI (Windows): For the optional terminal dashboard on Windows.
+# Install this ONLY if running on Windows and enabling the console dashboard.
+# On Linux/macOS, ensure ncurses library development headers are installed instead.
+windows-curses
+
+
+# Note: The script uses `zoneinfo`, which is built into Python 3.9+.
+# If you need to run on Python 3.8 or older, you would need to add `backports.zoneinfo`.
