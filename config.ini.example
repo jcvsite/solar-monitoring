@@ -23,7 +23,7 @@ POLL_INTERVAL = 5
 LOCAL_TIMEZONE = UTC
 
 # Set to false to disable checking for new script versions on startup.
-CHECK_FOR_UPDATES = true
+CHECK_FOR_UPDATES = false
 
 # Maximum number of times the watchdog will attempt to restart a failed plugin before giving up.
 MAX_RECONNECT_ATTEMPTS = 5

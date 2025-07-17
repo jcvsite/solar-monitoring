@@ -44,6 +44,7 @@ from services.curses_service import CursesService
 from services.tuya_service import TuyaService
 from services.data_filter_service import DataFilterService
 from utils.lock import acquire_lock, cleanup_lock_file
+from utils.update_checker import check_for_updates_safe
 
 # Application version
 __version__ = "1.3.1"
@@ -132,7 +133,23 @@ if __name__ == "__main__":
     # Validate critical configuration settings. This will exit if config is invalid.
     validate_core_config(app_state)
     
-    # --- 2. Initialize Core Services ---
+    # --- 2. Check for Updates (if enabled) ---
+    if app_state.config.getboolean('GENERAL', 'CHECK_FOR_UPDATES', fallback=True):
+        # Run update check in a separate thread to avoid blocking startup
+        def update_check_thread():
+            result = check_for_updates_safe(__version__)
+            if result:
+                # Store update information in app state
+                app_state.update_available = result['update_available']
+                app_state.latest_version = result['latest']
+                app_state.update_check_completed = True
+        
+        update_thread = threading.Thread(target=update_check_thread, name="UpdateChecker", daemon=True)
+        update_thread.start()
+    else:
+        logger.info("Update checking is disabled in configuration")
+    
+    # --- 3. Initialize Core Services ---
     logger.info("Initializing core services...")
     db_service = DatabaseService(app_state)
     mqtt_service = MqttService(app_state)
@@ -143,7 +160,7 @@ if __name__ == "__main__":
     tuya_service = TuyaService(app_state)
     filter_service = DataFilterService(app_state)
 
-    # --- 3. Load Plugins ---
+    # --- 4. Load Plugins ---
     logger.info("Loading configured plugins...")
     for name in app_state.configured_plugin_instance_names:
         plugin_type = app_state.config.get(f"PLUGIN_{name}", "plugin_type")
@@ -156,11 +173,11 @@ if __name__ == "__main__":
         cleanup_lock_file()
         sys.exit(1)
 
-    # --- 4. Setup Graceful Shutdown ---
+    # --- 5. Setup Graceful Shutdown ---
     signal.signal(signal.SIGINT, graceful_exit(app_state))  # Handle Ctrl-C
     signal.signal(signal.SIGTERM, graceful_exit(app_state)) # Handle systemctl stop, docker stop
 
-    # --- 5. Create and Start Core Threads ---
+    # --- 6. Create and Start Core Threads ---
     logger.info("Creating and starting core threads...")
     threads = []
 
@@ -198,7 +215,7 @@ if __name__ == "__main__":
     )
     threads.append(health_monitor_thread)
     
-    # --- 6. Start Services and Threads ---
+    # --- 7. Start Services and Threads ---
     db_service.start()
     mqtt_service.start()
     web_service.start()
