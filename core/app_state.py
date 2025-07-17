@@ -138,3 +138,9 @@ class AppState:
         self.weather_temperature_unit: str = "celsius"
         self.weather_update_interval_minutes: int = 15
         self.weather_map_zoom_level: int = 5
+
+        # Update Check State
+        self.update_available = False
+        self.current_version = version
+        self.latest_version: Optional[str] = None
+        self.update_check_completed = False
