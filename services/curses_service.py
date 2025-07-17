@@ -917,7 +917,13 @@ class CursesService:
         status_dict = data.get(StandardDataKeys.CORE_PLUGIN_CONNECTION_STATUS, {})
         link_stat = status_dict.get("value", STATUS_DISCONNECTED)
         now = datetime.now(self.app_state.local_tzinfo).strftime('%Y-%m-%d %H:%M:%S %Z')
-        header_text = f"Solar Monitoring v{self.app_state.version} - {now} - Link: "
+        
+        # Check if update is available and add to header
+        if self.app_state.update_available and self.app_state.latest_version:
+            header_text = f"Solar Monitoring v{self.app_state.version} [UPDATE v{self.app_state.latest_version} AVAILABLE] - {now} - Link: "
+        else:
+            header_text = f"Solar Monitoring v{self.app_state.version} - {now} - Link: "
+            
         self._add_str_safe(0, (cols - len(header_text) - len(str(link_stat))) // 2, header_text, curses.A_BOLD)
         self._add_str_safe(0, (cols - len(header_text) - len(str(link_stat))) // 2 + len(header_text), str(link_stat).upper(), self._get_color_attr(link_stat))
         self._add_str_safe(1, 0, "=" * cols, curses.A_BOLD)

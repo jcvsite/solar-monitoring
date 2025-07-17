@@ -316,4 +316,10 @@ class WebService:
         payload[StandardDataKeys.CONFIG_BATTERY_MAX_CHARGE_POWER_W] = self.app_state.battery_max_charge_power_w
         payload[StandardDataKeys.CONFIG_BATTERY_MAX_DISCHARGE_POWER_W] = self.app_state.battery_max_discharge_power_w
         
+        # Add update notification information
+        payload['update_available'] = self.app_state.update_available
+        payload['current_version'] = self.app_state.current_version
+        payload['latest_version'] = self.app_state.latest_version
+        payload['update_check_completed'] = self.app_state.update_check_completed
+        
         return payload
