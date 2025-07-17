@@ -6,6 +6,18 @@
 
 A comprehensive, plugin-driven, multi-threaded Python framework for monitoring renewable energy systems. It fetches data from various devices (inverters, BMS) via configurable plugins, aggregates the data, and provides a rich set of features for real-time monitoring, historical analysis, and home automation integration.
 
+## ⚡ **True Real-Time Monitoring**
+
+**Unlike manufacturer apps that update every 15+ minutes, this framework provides genuine real-time data updates every 5 seconds!**
+
+- 🚀 **5-second polling intervals** - See your solar production changes instantly
+- 📱 **Manufacturer apps**: Typically 15-30 minute delays via cloud services
+- 🌐 **Direct local connection** - No cloud delays or dependencies
+- ⚡ **Instant response** - Watch power flows change in real-time as clouds pass or loads switch on/off
+- 🎯 **Perfect for troubleshooting** - Immediately see the impact of system changes
+
+*Stop waiting for stale data - monitor your solar system as it actually performs!*
+
 ## Core Features
 
 -   **🧩 Plugin-Based Architecture:** Easily extendable to support new devices by creating new plugins. The framework handles the core logic of polling, data processing, and service integration.
