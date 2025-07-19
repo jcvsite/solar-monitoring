@@ -106,7 +106,7 @@ This framework comes with the following built-in plugins. The status indicates t
     ![Solar Monitor Web Dashboard Overview - Dark Mode](screenshots/web_dashboard_overview_darkmode.png)
     _The main web interface showing key metrics and charts (Light and Dark modes)._
 
-    ![Energy Flow Diagram](screenshots/solar-monitoring-preview.mp4)
+    ![Energy Flow Diagram](screenshots/solar-monitoring-preview.gif)
     _Live energy flow visualization between PV, Grid, Battery, and Load._
 
 *   **Console Dashboard:**
