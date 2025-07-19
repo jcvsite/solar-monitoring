@@ -7,10 +7,15 @@ This directory contains standalone test scripts for testing individual plugins w
 ### Individual Plugin Tests
 
 1. **`inverter_stand_alone_test_solis.py`** - Test Solis Modbus inverters
-2. **`inverter_stand_alone_test_deye.py`** - Test Deye/Sunsynk inverters  
-3. **`bms_stand_alone_test_seplos_v2.py`** - Test Seplos BMS V2
-4. **`bms_stand_alone_test_seplos_v3.py`** - Test Seplos BMS V3
-5. **`bms_stand_alone_test_jk.py`** - Test JK BMS (Modbus)
+2. **`inverter_stand_alone_test_deye.py`** - Test Deye/Sunsynk inverters
+3. **`inverter_stand_alone_test_powmr.py`** - Test POWMR RS232 inverters (inv8851 protocol)
+4. **`bms_stand_alone_test_seplos_v2.py`** - Test Seplos BMS V2
+5. **`bms_stand_alone_test_seplos_v3.py`** - Test Seplos BMS V3
+6. **`bms_stand_alone_test_jk.py`** - Test JK BMS (Modbus)
+
+### Comprehensive Plugin Test Suites
+
+1. **`test_powmr_rs232_plugin.py`** - Complete test suite for POWMR RS232 plugin
 
 ## Usage
 
@@ -26,9 +31,18 @@ python test_plugins/inverter_stand_alone_test_solis.py
 set INVERTER_INSTANCE_NAME=INV_Solis
 python test_plugins/inverter_stand_alone_test_solis.py
 
+# For POWMR RS232 inverters
+python test_plugins/inverter_stand_alone_test_powmr.py
+# Or with custom instance name
+set INVERTER_INSTANCE_NAME=INV_POWMR
+python test_plugins/inverter_stand_alone_test_powmr.py
+
 # For BMS plugins
 set BMS_INSTANCE_NAME=BMS_Seplos_v2
 python test_plugins/bms_stand_alone_test_seplos_v2.py
+
+# Run comprehensive test suite for POWMR RS232
+python test_plugins/test_powmr_rs232_plugin.py
 ```
 ## What the Tests Do
 
@@ -49,11 +63,34 @@ Before running tests, ensure your `config.ini` file contains the appropriate plu
 ### For Inverter Tests
 - `[PLUGIN_INV_Solis]` - Solis inverter configuration
 - `[PLUGIN_INV_Deye]` - Deye/Sunsynk inverter configuration
+- `[PLUGIN_INV_POWMR]` - POWMR RS232 inverter configuration (inv8851 protocol)
 
 ### For BMS Tests  
 - `[PLUGIN_BMS_Seplos_v2]` - Seplos V2 BMS configuration
 - `[PLUGIN_BMS_Seplos_v3]` - Seplos V3 BMS configuration
 - `[PLUGIN_BMS_JK]` - JK BMS configuration
+
+## Configuration Loading
+
+All test plugins now use a **centralized configuration loader** (`test_plugins/test_config_loader.py`) that provides:
+
+### ✅ **Robust Configuration Parsing**
+- **Intelligent comment handling**: Properly handles inline comments with `;` and `#`
+- **Smart semicolon detection**: Preserves legitimate semicolons in values like crypto keys
+- **Automatic whitespace trimming**: Removes extra spaces and quotes
+- **Type conversion**: Automatic conversion to int, float, bool, or string
+- **Consistent behavior**: Same parsing logic as the main application
+
+### ✅ **Plugin-Specific Support**
+- **POWMR RS232**: `powmr_protocol_version` parameter
+- **Deye/Sunsynk**: `deye_model_series` parameter  
+- **Seplos BMS**: All Seplos-specific connection parameters
+- **Universal parameters**: Modbus settings, timeouts, power ratings
+
+### ✅ **Error Prevention**
+- **No more parsing errors**: Eliminates `invalid literal for int()` errors
+- **Graceful fallbacks**: Uses sensible defaults when values are missing
+- **Clear error messages**: Helpful feedback when configuration issues occur
 
 ## Troubleshooting
 
@@ -68,10 +105,11 @@ Before running tests, ensure your `config.ini` file contains the appropriate plu
    - Check network connectivity to devices
    - Ensure devices are powered on and responsive
 
-3. **Configuration Errors**
-   - Verify plugin section names match exactly
-   - Check for typos in configuration parameters
-   - Ensure required parameters are present
+3. **Configuration Errors** ✅ **RESOLVED**
+   - ~~Verify plugin section names match exactly~~ ✅ **Auto-handled**
+   - ~~Check for typos in configuration parameters~~ ✅ **Auto-handled**
+   - ~~Ensure required parameters are present~~ ✅ **Auto-handled**
+   - **Configuration parsing is now robust and handles most common issues automatically**
 
 ### Debug Tips
 

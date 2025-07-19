@@ -30,68 +30,7 @@ if project_root_dir not in sys.path:
 
 # Now, project-level imports will work
 from plugins.inverter.deye_sunsynk_plugin import DeyeSunsynkPlugin
-
-
-def load_inverter_config_from_file(config_file_path: str, instance_name: str) -> dict:
-    """
-    Load inverter configuration from config.ini file.
-    
-    Args:
-        config_file_path: Path to the config.ini file
-        instance_name: Name of the inverter instance (e.g., 'INV_Deye')
-    
-    Returns:
-        Dictionary containing inverter configuration
-    """
-    config = configparser.ConfigParser(interpolation=None)
-    
-    if not os.path.exists(config_file_path):
-        raise FileNotFoundError(f"Config file not found: {config_file_path}")
-    
-    config.read(config_file_path, encoding='utf-8')
-    section_name = f"PLUGIN_{instance_name}"
-    
-    if not config.has_section(section_name):
-        raise ValueError(f"Config section [{section_name}] not found in {config_file_path}")
-    
-    # Extract inverter configuration from the config file
-    inverter_config = {
-        "instance_name": f"Test{instance_name}",
-        "connection_type": config.get(section_name, "connection_type", fallback="tcp"),
-        "slave_address": config.getint(section_name, "slave_address", fallback=1),
-        "deye_model_series": config.get(section_name, "deye_model_series", fallback="modern_hybrid"),
-    }
-    
-    # Add connection-specific settings
-    if inverter_config["connection_type"] == "tcp":
-        inverter_config.update({
-            "tcp_host": config.get(section_name, "tcp_host", fallback="localhost"),
-            "tcp_port": config.getint(section_name, "tcp_port", fallback=8899),
-        })
-    else:  # serial connection
-        inverter_config.update({
-            "serial_port": config.get(section_name, "serial_port", fallback="COM1"),
-            "baud_rate": config.getint(section_name, "baud_rate", fallback=9600),
-            "parity": config.get(section_name, "parity", fallback="N"),
-            "stopbits": config.getint(section_name, "stopbits", fallback=1),
-            "bytesize": config.getint(section_name, "bytesize", fallback=8),
-        })
-    
-    # Add optional parameters if they exist
-    optional_params = [
-        ("modbus_timeout_seconds", "getfloat"),
-        ("inter_read_delay_ms", "getint"),
-        ("max_regs_per_read", "getint"),
-        ("max_read_retries_per_group", "getint"),
-        ("static_rated_power_ac_watts", "getfloat")
-    ]
-    
-    for param_name, getter_method in optional_params:
-        if config.has_option(section_name, param_name):
-            getter = getattr(config, getter_method)
-            inverter_config[param_name] = getter(section_name, param_name)
-    
-    return inverter_config
+from test_plugins.test_config_loader import load_inverter_config_from_file
 
 
 def pretty_print_data(data_dict, title="Data"):

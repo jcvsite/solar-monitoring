@@ -30,62 +30,7 @@ if project_root_dir not in sys.path:
 
 # Now, project-level imports will work
 from plugins.battery.seplos_bms_v2_plugin import SeplosBMSV2
-
-
-def load_bms_config_from_file(config_file_path: str, instance_name: str) -> dict:
-    """
-    Load BMS configuration from config.ini file.
-    
-    Args:
-        config_file_path: Path to the config.ini file
-        instance_name: Name of the BMS instance (e.g., 'BMS_Seplos_v2')
-    
-    Returns:
-        Dictionary containing BMS configuration
-    """
-    config = configparser.ConfigParser(interpolation=None)
-    
-    if not os.path.exists(config_file_path):
-        raise FileNotFoundError(f"Config file not found: {config_file_path}")
-    
-    config.read(config_file_path, encoding='utf-8')
-    section_name = f"PLUGIN_{instance_name}"
-    
-    if not config.has_section(section_name):
-        raise ValueError(f"Config section [{section_name}] not found in {config_file_path}")
-    
-    # Extract BMS configuration from the config file
-    bms_config = {
-        "instance_name": f"Test{instance_name}",
-        "seplos_connection_type": config.get(section_name, "seplos_connection_type", fallback="tcp"),
-        "seplos_pack_address": config.getint(section_name, "seplos_pack_address", fallback=0),
-    }
-    
-    # Add connection-specific settings
-    if bms_config["seplos_connection_type"] == "tcp":
-        bms_config.update({
-            "seplos_tcp_host": config.get(section_name, "seplos_tcp_host", fallback="localhost"),
-            "seplos_tcp_port": config.getint(section_name, "seplos_tcp_port", fallback=5022),
-        })
-    else:  # serial connection
-        bms_config.update({
-            "seplos_serial_port": config.get(section_name, "seplos_serial_port", fallback="COM1"),
-            "seplos_baud_rate": config.getint(section_name, "seplos_baud_rate", fallback=19200),
-        })
-    
-    # Add optional parameters if they exist
-    optional_params = [
-        ("seplos_tcp_timeout", "getfloat"),
-        ("seplos_inter_command_delay_ms", "getint"),
-        ("seplos_serial_operation_timeout", "getfloat")
-    ]
-    
-    for param_name, getter_method in optional_params:
-        if config.has_option(section_name, param_name):
-            getter = getattr(config, getter_method)
-            bms_config[param_name] = getter(section_name, param_name)
-    
-    return bms_config
+from test_plugins.test_config_loader import load_bms_config_from_file
 
 
 def pretty_print_data(data_dict, title="Data"):
