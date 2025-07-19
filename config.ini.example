@@ -11,7 +11,7 @@
 [GENERAL]
 # List of plugin instances to load, comma-separated.
 # Each name must correspond to a [PLUGIN_instance_name] section below. 
-# Add multiple plugins below separated by comma (Eg. INV_Solis, BMS_Seplos_v2)
+# Examples: INV_Solis, INV_POWMR, INV_Deye, BMS_Seplos_v2, BMS_JK
 PLUGIN_INSTANCES = INV_Solis
 
 # How often each plugin attempts a full data poll (in seconds).
@@ -87,6 +87,74 @@ bytesize = 8
 # inter_read_delay_ms = 500
 # Increase retries for better reliability during network issues
 # max_read_retries_per_group = 3
+
+[PLUGIN_INV_POWMR]
+# Configures the POWMR Inverter plugin instance.
+plugin_type = inverter.powmr_modbus_plugin
+
+# Choose 'tcp' for network adapters or 'serial' for direct RS485 connection
+connection_type = serial
+
+# --- TCP Settings (only used if connection_type = tcp) ---
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 5
+
+# --- Serial Settings (only used if connection_type = serial) ---
+# On Windows (e.g., COM3, COM4) / On Linux (e.g., /dev/ttyUSB0, /dev/ttyAMA0)
+serial_port = COM3
+baud_rate = 2400            ; <-- Common for RS-232: 2400, 4800, 9600
+parity = N
+stopbits = 1
+bytesize = 8
+
+# --- Optional Parameters (uncomment to override plugin defaults) ---
+# Increase timeout for better network resilience
+# modbus_timeout_seconds = 10.0
+# Delay between register group reads (helps with slower devices)
+# inter_read_delay_ms = 500
+# Maximum registers to read in a single Modbus request
+# max_regs_per_read = 60
+# Number of retries for each register group before giving up
+# max_read_retries_per_group = 2
+# Grace period after connection before starting normal polling
+# startup_grace_period_seconds = 120
+# Maximum consecutive polls that can return "waiting" status before forcing reconnect
+# max_consecutive_waiting_polls = 5
+# Static power ratings for calculations (if not available from device)
+# static_max_ac_power_watts = 5000.0
+# static_max_dc_power_watts = 6000.0
+
+[PLUGIN_INV_POWMR_RS232]
+# Configures the POWMR RS232 Inverter plugin instance using native inv8851 protocol.
+# This plugin uses the POWMR's custom protocol instead of Modbus for better compatibility.
+# GitHub: https://github.com/jcvsite/solar-monitoring
+plugin_type = inverter.powmr_rs232_plugin
+
+# Choose 'tcp' for RS232-to-TCP converters or 'serial' for direct RS232 connection
+connection_type = serial
+
+# POWMR Protocol Version (1 or 2) - Version 2 has extended packet length
+powmr_protocol_version = 1
+
+# --- TCP Settings (only used if connection_type = tcp) ---
+# Use these settings if you have an RS232-to-TCP converter
+# tcp_host = 192.168.1.120
+# tcp_port = 502
+
+# --- Serial Settings (only used if connection_type = serial) ---
+# On Windows (e.g., COM3, COM4) / On Linux (e.g., /dev/ttyUSB0, /dev/ttyAMA0)
+serial_port = COM3
+baud_rate = 9600            ; <-- Common for POWMR RS232: 2400, 4800, 9600
+# Note: POWMR RS232 protocol uses 8N1 (8 data bits, no parity, 1 stop bit)
+
+# --- Optional Parameters ---
+# Connection timeout in seconds
+# connection_timeout_seconds = 10
+
+# Static power ratings for calculations
+# static_max_ac_power_watts = 5000.0
+# static_max_dc_power_watts = 6000.0
 
 [PLUGIN_INV_Deye]
 plugin_type = inverter.deye_sunsynk_plugin

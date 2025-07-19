@@ -90,6 +90,7 @@ This framework comes with the following built-in plugins. The status indicates t
 | :--- | :--- | :--- |
 | 🔌 **Inverters** | | |
 | `inverter.solis_modbus_plugin` | For Ginlong/Solis S6 and similar hybrid inverters using Modbus TCP or Serial. | ✅ Stable |
+| `inverter.powmr_rs232_plugin` | For POWMR hybrid inverters using native inv8851 RS232 protocol with comprehensive monitoring. | 🧪 Needs Testers |
 | `inverter.deye_sunsynk` | For Deye and Sunsynk hybrid inverters using Modbus TCP. | 🧪 Needs Testers |
 | 🔋 **Battery Management Systems (BMS)** | | |
 | `battery.seplos_bms_v2` | For Seplos V2 BMS units using their proprietary serial or TCP protocol. | ✅ Stable |
@@ -105,7 +106,7 @@ This framework comes with the following built-in plugins. The status indicates t
     ![Solar Monitor Web Dashboard Overview - Dark Mode](screenshots/web_dashboard_overview_darkmode.png)
     _The main web interface showing key metrics and charts (Light and Dark modes)._
 
-    ![Energy Flow Diagram](screenshots/solar-monitoring-preview.gif)
+    ![Energy Flow Diagram](screenshots/solar-monitoring-preview.mp4)
     _Live energy flow visualization between PV, Grid, Battery, and Load._
 
 *   **Console Dashboard:**
@@ -256,7 +257,7 @@ Edit the `config.ini` file. Key sections:
     *   `PLUGIN_INSTANCES`: This is the most important setting. List the names of the plugin configurations you will create. For example:
     *   PLUGIN_INSTANCES = main_inverter, main_bms
     *   `LOCAL_TIMEZONE`: Your local IANA timezone name (e.g., `Asia/Manila`, `Europe/London`, `America/New_York`). Defaults to `UTC`. A list can be found [here](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
-    *   `CHECK_FOR_UPDATES`: `true` or `false` (default) to enable/disable checking GitHub for script updates on startup.
+    *   `CHECK_FOR_UPDATES`: `true` (default) or `false` to enable/disable checking GitHub for script updates on startup.
 *   **`[INVERTER_SYSTEM]`:** These values define your physical system and are used for calculations and filtering.
     *   `DEFAULT_MPPT_COUNT`: Total number of MPPTs on your inverter.
     *   `PV_INSTALLED_CAPACITY_W`: Total peak DC power of your solar array in Watts.
@@ -341,7 +342,7 @@ Ensure your project directory is set up as follows for the script and web interf
 
 
     ```
-	your_project_directory/
+	solar-monitoring/
 	├── main.py
 	├── core/
 	│   ├── app_state.py
@@ -423,13 +424,21 @@ Ensure your project directory is set up as follows for the script and web interf
 The script version is defined by the `__version__` variable in `main.py`.
 If `CHECK_FOR_UPDATES` is enabled, the script will:
 *   Require internet access.
-*   Fetch the latest script version from the `main` branch of the jcvsite/solar-monitoring
+*   Fetch the latest script version from the `main` branch of the jcvsite/solar-monitoring repository.
 *   Compare versions using the `packaging` library for accurate comparison (e.g., `1.10.0` > `1.9.0`).
 *   Log if an update is available. This check is non-blocking and will not prevent the script from running.
 
 ## 🧑‍💻 For Developers: Creating a New Plugin
 
-The framework is designed for easy extension. To add support for a new device, follow these steps:
+The framework is designed for easy extension with comprehensive design references based on proven, stable plugin architectures:
+
+### **📖 Design References**
+- **[Inverter Plugin Design Reference](INVERTER_PLUGIN_DESIGN_REFERENCE.md)** - Based on the stable Solis plugin architecture
+- **[BMS Plugin Design Reference](BMS_PLUGIN_DESIGN_REFERENCE.md)** - Based on the stable Seplos V2 plugin architecture
+
+### Quick Start Guide
+
+To add support for a new device, follow these steps:
 
 1.  **Create the Plugin File**
     -   Add a new Python file in the appropriate sub-directory:
