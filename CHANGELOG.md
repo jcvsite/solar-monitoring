@@ -2,12 +2,68 @@
 
 All notable changes to the Solar Monitoring Framework will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [Unreleased]
 
 ### Added
+- **EG4 Modbus Plugin**: Complete plugin implementation for EG4 hybrid inverters
+  - Dual connection support: Modbus TCP and Serial (RTU) connections
+  - Support for EG4 inverter models with comprehensive register mapping
+  - Real-time monitoring of PV generation, battery status, and grid interaction
+  - Energy statistics tracking (daily and total lifetime values)
+  - Temperature monitoring from multiple sensors (inverter, radiator, battery)
+  - Comprehensive fault and warning code interpretation
+  - Little-endian byte/word order handling as per EG4 protocol specification
+  - Operation mode detection with detailed status reporting
+  - BMS integration with charge/discharge current limits
+  - Standardized data format using StandardDataKeys
+- **Growatt Modbus Plugin**: Complete plugin implementation for Growatt inverters
+  - Dual connection support: Modbus TCP and Serial (RTU) connections for both standard and storage/hybrid models
+  - Support for Growatt MIX and SPH series inverters
+  - Dual register block reading (0-124 for inverter data, 1000-1124 for storage data)
+  - Real-time monitoring of PV generation, battery management, and grid interaction
+  - Energy statistics with comprehensive daily and lifetime tracking
+  - Storage system work mode detection and status reporting
+  - Temperature monitoring from inverter and battery sensors
+  - Standardized data format using StandardDataKeys
+- **SRNE Modbus Plugin**: Complete plugin implementation for SRNE solar charge controllers
+  - Dual connection support: Modbus TCP and Serial (RTU) connections for SRNE charge controller models
+  - Comprehensive register mapping for both static and dynamic data
+  - Real-time monitoring of PV charging, battery status, and load management
+  - Battery status code interpretation with charging state detection
+  - Fault detection with categorized alert reporting (16 low + 16 high fault bits)
+  - Temperature monitoring from controller and battery sensors
+  - Energy statistics tracking (daily and total lifetime values)
+  - DC-only device support with proper MPPT and phase configuration
+  - Standardized data format using StandardDataKeys
+- **LuxPower Modbus Plugin**: Complete plugin implementation for LuxPower hybrid inverters
+  - Dual connection support: Modbus TCP and Serial (RS485) connections
+  - Support for LXP-5K, LXP-12K, and LXP-LB-5K inverter models
+  - Complete register mapping (90+ operational registers, 50+ configuration registers)
+  - Real-time monitoring of PV generation, battery status, and grid interaction
+  - Energy statistics tracking (daily and total lifetime values)
+  - Temperature monitoring from multiple sensors (inverter and battery)
+  - Pre-connection validation for TCP connections (port check + ICMP ping)
+  - Comprehensive error handling and connection management
+  - Support for lxp-bridge protocol (default port 8000)
+  - Automatic retry mechanisms and connection recovery
+  - Standardized data format using StandardDataKeys
+- **Enhanced Plugin Architecture**: Major improvements to plugin coding standards and consistency
+  - **Comprehensive Documentation Standards**: All plugins now follow enterprise-level documentation practices
+    - Detailed class docstrings explaining plugin purpose, functionality, and capabilities
+    - Complete method documentation with parameter descriptions and return value specifications
+    - Inline code comments explaining complex logic and protocol-specific implementations
+    - Consistent docstring formatting matching the stable Solis plugin standard
+  - **Standardized Coding Practices**: Unified coding style across all inverter plugins
+    - Consistent error handling patterns and exception management
+    - Unified connection management with pre-connection validation
+    - Comprehensive logging with consistent message formatting and plugin instance identification
+    - Static methods for register handling and data validation
+    - Type safety improvements and data sanitization
+    - Enterprise-level coding standards implementation
+  - **Plugin Compatibility Analysis**: Detailed analysis of EG4 vs LuxPower compatibility
+    - Confirmed EG4 and LuxPower inverters are NOT intercompatible due to fundamental differences
+    - Different communication protocols (RTU vs TCP), register mappings, and data encoding
+    - Clear documentation preventing configuration errors and compatibility confusion
 - **POWMR RS232 Plugin**: Complete rewrite using native inv8851 protocol instead of Modbus
   - Native inv8851 protocol implementation based on header file specification
   - Support for both protocol versions 1 and 2 with automatic packet size handling
