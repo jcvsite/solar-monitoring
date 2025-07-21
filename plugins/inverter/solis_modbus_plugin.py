@@ -1,4 +1,33 @@
 # plugins/inverter/solis_modbus_plugin.py
+"""
+Solis Modbus Inverter Plugin
+
+This plugin communicates with Solis hybrid inverters using Modbus TCP and Serial protocols.
+It supports comprehensive monitoring of inverter status, power generation, battery management,
+and energy statistics for Solis inverter models.
+
+Features:
+- Dual connection support (Modbus TCP and Serial)
+- Pre-connection validation for TCP connections
+- Complete register mapping for operational and configuration data
+- Real-time monitoring of PV generation, battery status, and grid interaction
+- Energy statistics tracking (daily, total lifetime values)
+- Temperature monitoring from multiple sensors
+- Comprehensive fault and warning code processing
+- Battery management system integration
+- Support for multiple Solis inverter models
+- Automatic retry mechanisms and connection recovery
+
+Supported Models:
+- Solis S5 series (hybrid inverters)
+- Solis S6 series (hybrid inverters)
+- Solis RHI series (residential hybrid inverters)
+- Compatible Solis hybrid inverter models
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import time
 import struct
 import logging

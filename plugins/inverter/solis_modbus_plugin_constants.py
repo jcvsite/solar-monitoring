@@ -1,7 +1,56 @@
 # plugins/inverter/solis_modbus_plugin_constants.py
 """
-This module contains constant definitions for the Solis Modbus plugin,
-including register maps, status codes, and fault bitfields.
+Solis Modbus Constants and Register Definitions
+
+This module contains comprehensive constant definitions for Solis hybrid inverters using
+the Modbus RTU/TCP protocol. It includes all register maps, status codes, fault bitfields,
+and configuration parameters needed to communicate with Solis inverter models.
+
+Features:
+- Complete register mapping for operational and configuration data
+- Input registers for real-time monitoring data
+- Holding registers for configuration and static information
+- Comprehensive fault and warning bitfield processing
+- Battery management system integration
+- Energy statistics tracking (daily, total lifetime values)
+- Temperature monitoring from multiple sensors
+- Inverter model and battery model code interpretations
+- Modbus exception handling constants
+
+Supported Models:
+- Solis S5 series (hybrid inverters)
+- Solis S6 series (hybrid inverters)
+- Solis RHI series (residential hybrid inverters)
+- Compatible Solis hybrid inverter models
+
+Register Categories:
+- SOLIS_REGISTERS: Complete register mapping for operational and configuration data
+- SOLIS_INVERTER_STATUS_CODES: Inverter status interpretations
+- SOLIS_FAULT_BITFIELD_MAPS: Fault and warning bitfield processing
+- SOLIS_INVERTER_MODEL_CODES: Inverter model code interpretations
+- BATTERY_MODEL_CODES: Battery model code interpretations
+- MODBUS_EXCEPTION_CODES: Modbus exception handling constants
+
+Protocol Features:
+- Complete register mapping for operational and configuration data
+- Battery management system integration
+- Energy statistics tracking (daily, total lifetime values)
+- Temperature monitoring from multiple sensors
+- Comprehensive fault and warning bitfield processing
+- Inverter model and battery model code interpretations
+
+Protocol Features:
+- Real-time monitoring of PV generation, battery status, and grid interaction
+- Energy statistics tracking (daily, total lifetime values)
+- Temperature monitoring from multiple sensors
+- Comprehensive fault and warning code processing
+- Battery management system integration
+- Configuration parameter access
+- Support for multiple polling priorities (critical, normal, low)
+
+Protocol Reference: Solis Modbus RTU/TCP Protocol
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 from typing import Any, Dict, List
 

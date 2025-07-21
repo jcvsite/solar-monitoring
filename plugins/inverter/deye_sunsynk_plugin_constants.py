@@ -1,20 +1,31 @@
 """
-Constants and register definitions for Deye/Sunsynk inverter plugins.
+Deye/SunSynk Modbus Constants and Register Definitions
 
-This module contains all the register maps, status codes, fault codes, and other
-constants needed to communicate with various Deye and Sunsynk inverter models.
-It supports multiple model series with different register layouts.
+This module contains comprehensive constant definitions for Deye and SunSynk hybrid inverters.
+It includes all register maps, status codes, fault codes, and protocol constants needed
+to communicate with various Deye and SunSynk inverter models via Modbus RTU/TCP.
+
+Features:
+- Complete register mapping for multiple inverter series
+- BMS protocol support for battery communication
+- Status code interpretations and fault diagnostics
+- Modbus exception handling constants
+- Support for both single-phase and three-phase systems
+- Energy monitoring and configuration parameters
 
 Supported Models:
-- Modern single-phase hybrid inverters (Sunsynk 5K, Deye SUN-5K-SG04LP1)
+- Modern single-phase hybrid inverters (SunSynk 5K, Deye SUN-5K-SG04LP1)
 - Legacy single-phase hybrid inverters (older Deye models)
 - Three-phase hybrid inverters (Deye SG01HP3 and similar)
+- SunSynk ECCO series hybrid inverters
 
-Register Maps:
-- DEYE_COMMON_REGISTERS: Shared across all models
-- DEYE_MODERN_HYBRID_REGISTERS: Most common single-phase models
-- DEYE_LEGACY_HYBRID_REGISTERS: Older single-phase models
-- DEYE_THREE_PHASE_REGISTERS: Three-phase models
+Protocol Support:
+- Modbus RTU over Serial (RS485)
+- Modbus TCP over Ethernet
+- BMS communication protocols
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 from plugins.plugin_interface import StandardDataKeys as StdKeys

@@ -17,8 +17,18 @@ Features:
 - Comprehensive alert/fault code processing
 - BMS integration for battery cell monitoring
 - Configuration parameter reading
+- Real-time monitoring of PV generation, battery status, and grid interaction
+- Energy statistics tracking (daily, total lifetime values)
+- Comprehensive error handling and connection management
 
-GitHub: https://github.com/jcvsite/solar-monitoring
+Supported Models:
+- POWMR 4500W series
+- POWMR 6000W series
+- Compatible POWMR hybrid inverter models with inv8851 protocol
+
+Protocol Reference: inv8851 RS232 Protocol
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 import time
@@ -46,6 +56,7 @@ from .powmr_rs232_plugin_constants import (
 )
 
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 
 # Constants for error handling
 ERROR_READ = "read_error"
@@ -190,6 +201,76 @@ class PowmrCustomRs232Plugin(DevicePlugin):
         powmr_protocol_version = 1
     """
     
+    @staticmethod
+    def _plugin_decode_register(registers: List[int], info: Dict[str, Any], logger_instance: logging.Logger) -> Tuple[Any, Optional[str]]:
+        """
+        Decodes raw register values into a scaled and typed Python object.
+
+        Args:
+            registers: A list of integers representing the raw register values.
+            info: The dictionary of register information from POWMR_REGISTERS.
+            logger_instance: The logger to use for reporting errors.
+
+        Returns:
+            A tuple containing:
+            - The decoded and scaled value. On error, returns the string "decode_error".
+            - The unit of the value as a string (e.g., "V", "A", "W"), or None.
+        """
+        reg_type: str = info.get("type", "unknown")
+        scale: float = float(info.get("scale", 1.0))
+        unit: Optional[str] = info.get("unit")
+        value: Any = None
+        key_name_for_log: str = info.get('key', 'N/A_KeyMissingInInfo')
+
+        try:
+            if not registers:
+                raise ValueError("No registers provided")
+            
+            if reg_type == "uint16":
+                value = registers[0]
+            elif reg_type == "int16":
+                value = struct.unpack('>h', registers[0].to_bytes(2, 'big'))[0]
+            elif reg_type == "uint32":
+                if len(registers) < 2:
+                    raise ValueError("Insufficient registers for uint32")
+                value = struct.unpack('>I', b''.join(r.to_bytes(2, 'big') for r in registers[:2]))[0]
+            elif reg_type == "int32":
+                if len(registers) < 2:
+                    raise ValueError("Insufficient registers for int32")
+                value = struct.unpack('>i', b''.join(r.to_bytes(2, 'big') for r in registers[:2]))[0]
+            else:
+                raise ValueError(f"Unsupported type: {reg_type}")
+
+            if isinstance(value, (int, float)):
+                should_scale = (abs(scale - 1.0) > 1e-9) and (unit not in ["Bitfield", "Code", "Hex"])
+                final_value = float(value) * scale if should_scale else value
+                return final_value, unit
+            else:
+                return value, unit
+                
+        except (struct.error, ValueError, IndexError, TypeError) as e:
+            logger_instance.error(f"POWMRPlugin: Decode Error for '{key_name_for_log}' ({reg_type}) with {registers}: {e}", exc_info=False)
+            return ERROR_DECODE, unit
+
+    @staticmethod
+    def _plugin_get_register_count(reg_type: str, logger_instance: logging.Logger) -> int:
+        """
+        Determines the number of 16-bit registers a given data type occupies.
+
+        Args:
+            reg_type: The data type string (e.g., "uint32", "int16").
+            logger_instance: The logger to use for reporting warnings.
+
+        Returns:
+            The number of registers required for the data type.
+        """
+        if reg_type in ["uint32", "int32"]:
+            return 2
+        if reg_type in ["uint16", "int16"]:
+            return 1
+        logger_instance.warning(f"POWMRPlugin: Unknown type '{reg_type}' in get_register_count. Assuming 1.")
+        return 1
+    
     def __init__(self, instance_name: str, plugin_specific_config: Dict[str, Any], main_logger: logging.Logger, app_state: Optional['AppState'] = None):
         """
         Initialize the POWMR RS232 plugin.
@@ -294,13 +375,24 @@ class PowmrCustomRs232Plugin(DevicePlugin):
         """
         Establish TCP connection to the inverter.
         
-        Creates a TCP socket connection to the configured host and port.
-        This is typically used with RS232-to-TCP converters for remote
-        monitoring of POWMR inverters.
+        Performs a pre-connection check and creates a TCP socket connection
+        to the configured host and port. This is typically used with 
+        RS232-to-TCP converters for remote monitoring of POWMR inverters.
         
         Returns:
             True if TCP connection successful, False otherwise
         """
+        # Perform pre-connection network check
+        self.logger.info(f"POWMRPlugin '{self.instance_name}': Performing pre-connection network check for {self.tcp_host}:{self.tcp_port}...")
+        port_open, rtt_ms, err_msg = check_tcp_port(self.tcp_host, self.tcp_port, logger_instance=self.logger)
+        if not port_open:
+            self.last_error_message = f"Pre-check failed: TCP port {self.tcp_port} on {self.tcp_host} is not open. Error: {err_msg}"
+            self.logger.error(self.last_error_message)
+            icmp_ok, _, _ = check_icmp_ping(self.tcp_host, logger_instance=self.logger)
+            if not icmp_ok:
+                self.logger.error(f"ICMP ping to {self.tcp_host} also failed. Host is likely down or blocked.")
+            return False
+
         try:
             self.tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.tcp_client.settimeout(10)
