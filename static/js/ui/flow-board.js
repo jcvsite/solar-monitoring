@@ -102,7 +102,7 @@ function cacheDOMElements() {
 		d.gridIconSvg = gC.querySelector('.grid-icon svg');
 	}
 	d.gridToInverterLineContainer = s.querySelector('.grid-to-inverter-line');
-    d.gridToInverterLineContainer2 = s.querySelector('.grid-to-inverter-line2');
+	d.gridToInverterLineContainer2 = s.querySelector('.grid-to-inverter-line2');
 	d.gridFlowIndicator = s.querySelector('#flowBoard_grid-flow-indicator');
 	d.gridFlowIndicator2 = s.querySelector('#flowBoard_grid-flow-indicator2');
 	const invC = s.querySelector('.inverter-container');
@@ -126,7 +126,7 @@ function cacheDOMElements() {
 		d.batteryPowerBorder = s.querySelector('.battery-power-border');
 	}
 	d.batteryToInverterLineContainer = s.querySelector('.battery-to-inverter-line');
-    d.batteryToInverterLineContainer2 = s.querySelector('.battery-to-inverter-line2');
+	d.batteryToInverterLineContainer2 = s.querySelector('.battery-to-inverter-line2');
 	const battC = s.querySelector('.battery-container');
 	if (battC) {
 		d.batterySocPercentText = battC.querySelector('#flowBoard_battery-soc-percent .value-text');
@@ -144,7 +144,7 @@ function cacheDOMElements() {
 	const loadC = s.querySelector('.load-container');
 	if (loadC) {
 		d.loadTotalText = loadC.querySelector('.load-total-text .value-text');
-        ['Solar', 'Battery', 'Grid'].forEach(t => {
+		['Solar', 'Battery', 'Grid'].forEach(t => {
 			const tl = t.toLowerCase();
 			const prodCol = s.querySelector(`#flowBoard_prod-to-${tl}-col`);
 			if (prodCol) {
@@ -269,7 +269,7 @@ function animateFlow(getState) {
 		a.currentDistance += (a.direction === 'forward' ? speed : -speed);
 		if (a.currentDistance >= a.totalLength) { a.currentDistance = 0; }
 		if (a.currentDistance < 0) { a.currentDistance = a.totalLength; }
-		try { const pt = a.path.getPointAtLength(a.currentDistance); a.indicator.style.left = (a.svgContainer.offsetLeft + pt.x - a.indicator.offsetWidth / 2) + 'px'; a.indicator.style.top = (a.svgContainer.offsetTop + pt.y - a.indicator.offsetHeight / 2) + 'px'; } catch (e) {}
+		try { const pt = a.path.getPointAtLength(a.currentDistance); a.indicator.style.left = (a.svgContainer.offsetLeft + pt.x - a.indicator.offsetWidth / 2) + 'px'; a.indicator.style.top = (a.svgContainer.offsetTop + pt.y - a.indicator.offsetHeight / 2) + 'px'; } catch (e) { }
 	});
 
 	animationFrameId = requestAnimationFrame(() => animateFlow(getState));
@@ -414,35 +414,35 @@ export function updateFlowBoard(flowBoardData) {
 							sunAnimationGroup.unpauseAnimations();
 						}
 					}
-				} catch (e) {}
+				} catch (e) { }
 			}
 
-            // Normalize percentage and check if active
-            const percentNormalized = Math.min(1, Math.max(0, (d.pvTotal.percent || 0) / 100));
-            const isActive = !isPvDim && percentNormalized > 0;
-            let fillOpacityToApply = '0'; let filterToApply = 'none';
+			// Normalize percentage and check if active
+			const percentNormalized = Math.min(1, Math.max(0, (d.pvTotal.percent || 0) / 100));
+			const isActive = !isPvDim && percentNormalized > 0;
+			let fillOpacityToApply = '0'; let filterToApply = 'none';
 
-            if (isActive) {
-                // --- PV Cell Glow Effect Calculation ---
-                // Base opacity starts low and increases with power percentage.
-                const baseFillOpacity = 0.1; const maxAdditionalFillOpacity = 0.8; 
-                // Blur and shadow spread are calculated based on a power curve (pow(0.65))
-                // to make the glow effect more pronounced at lower power levels and less overwhelming at max.
-                const maxBlurRadius = 6; const maxShadowSpread = 1;  
-                const maxShadowOpacity = 0.5; const glowColorRGB = "255, 255, 100"; 
-                const currentCalculatedFillOpacity = baseFillOpacity + (maxAdditionalFillOpacity * percentNormalized);
-                const glowIntensityFactor = Math.pow(percentNormalized, 0.65); 
-                const currentCalculatedBlurRadius = Math.max(1, Math.round(maxBlurRadius * glowIntensityFactor)); 
-                const currentCalculatedShadowSpread = Math.round(maxShadowSpread * glowIntensityFactor);
-                const currentCalculatedShadowOpacity = Math.max(0.1, parseFloat((maxShadowOpacity * glowIntensityFactor).toFixed(2))); 
-                
-                fillOpacityToApply = String(currentCalculatedFillOpacity.toFixed(2));
-                filterToApply = `drop-shadow(0 0 ${currentCalculatedBlurRadius}px rgba(${glowColorRGB}, ${currentCalculatedShadowOpacity}))`;
-            }
+			if (isActive) {
+				// --- PV Cell Glow Effect Calculation ---
+				// Base opacity starts low and increases with power percentage.
+				const baseFillOpacity = 0.1; const maxAdditionalFillOpacity = 0.8;
+				// Blur and shadow spread are calculated based on a power curve (pow(0.65))
+				// to make the glow effect more pronounced at lower power levels and less overwhelming at max.
+				const maxBlurRadius = 6; const maxShadowSpread = 1;
+				const maxShadowOpacity = 0.5; const glowColorRGB = "255, 255, 100";
+				const currentCalculatedFillOpacity = baseFillOpacity + (maxAdditionalFillOpacity * percentNormalized);
+				const glowIntensityFactor = Math.pow(percentNormalized, 0.65);
+				const currentCalculatedBlurRadius = Math.max(1, Math.round(maxBlurRadius * glowIntensityFactor));
+				const currentCalculatedShadowSpread = Math.round(maxShadowSpread * glowIntensityFactor);
+				const currentCalculatedShadowOpacity = Math.max(0.1, parseFloat((maxShadowOpacity * glowIntensityFactor).toFixed(2)));
 
-            el.pvCells.forEach(cellElement => {
-                if (cellElement) { cellElement.style.opacity = fillOpacityToApply; cellElement.style.filter = filterToApply; }
-            });
+				fillOpacityToApply = String(currentCalculatedFillOpacity.toFixed(2));
+				filterToApply = `drop-shadow(0 0 ${currentCalculatedBlurRadius}px rgba(${glowColorRGB}, ${currentCalculatedShadowOpacity}))`;
+			}
+
+			el.pvCells.forEach(cellElement => {
+				if (cellElement) { cellElement.style.opacity = fillOpacityToApply; cellElement.style.filter = filterToApply; }
+			});
 		}
 	}
 
@@ -464,6 +464,82 @@ export function updateFlowBoard(flowBoardData) {
 		updateElementText(el.inverterVolts, d.inverter.volts, " V", 1);
 		updateElementText(el.inverterAmps, d.inverter.amps, " A", 1);
 		updateElementText(el.inverterHz, d.inverter.hz, " Hz", 1);
+
+		// Handle "No Grid" status display with duration tracking
+		const inverterStatus = (d.inverter.statusText || "").toLowerCase().trim();
+		const isNoGrid = inverterStatus.includes('no grid');
+
+		// Track "No Grid" duration
+		const noGridStartKey = 'noGridStartTime';
+		let noGridDuration = '';
+
+		if (isNoGrid) {
+			// Check if we already have a start time stored
+			let startTime = localStorage.getItem(noGridStartKey);
+			if (!startTime) {
+				// First time detecting "No Grid", store the current timestamp
+				startTime = Date.now();
+				localStorage.setItem(noGridStartKey, startTime);
+			}
+
+			// Calculate duration
+			const now = Date.now();
+			const diffMs = Math.max(0, now - parseInt(startTime));
+			const totalMinutes = Math.floor(diffMs / (1000 * 60));
+			const hours = Math.floor(totalMinutes / 60);
+			const minutes = totalMinutes % 60;
+
+			// Format duration string
+			let durationStr = '';
+			if (hours > 0) {
+				durationStr += hours + ' hr' + (hours > 1 ? 's' : '');
+				if (minutes > 0) {
+					durationStr += ', ';
+				}
+			}
+			if (minutes > 0 || hours === 0) {
+				durationStr += minutes + ' min' + (minutes > 1 ? 's' : '');
+			}
+			if (durationStr === '') {
+				durationStr = '< 1 min';
+			}
+
+			noGridDuration = durationStr;
+
+			// Set red opaque background and white text for "No Grid"
+			if (el.gridPowerBorder) {
+				el.gridPowerBorder.style.backgroundColor = 'red';
+				el.gridPowerBorder.style.opacity = '1';
+			}
+			if (el.gridPowerText) {
+				el.gridPowerText.style.color = 'white';
+				// Determine theme-appropriate color for duration text
+				const isDarkTheme = document.body.classList.contains('dark');
+				const durationColor = isDarkTheme ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.8)';
+				el.gridPowerText.innerHTML = `No Grid<span style="display: block; font-size: 0.4em; color: ${durationColor}; line-height: 0.8; margin-top: 2px;">Duration: ${noGridDuration}</span>`;
+			}
+			// Add blinking animation to grid-power-container
+			if (el.gridPowerContainer) {
+				el.gridPowerContainer.style.animation = 'blink 5s ease infinite';
+			}
+		} else {
+			// Grid is back, clear the stored start time
+			localStorage.removeItem(noGridStartKey);
+
+			// Reset to original settings
+			if (el.gridPowerBorder) {
+				el.gridPowerBorder.style.backgroundColor = '';
+				el.gridPowerBorder.style.opacity = '';
+			}
+			if (el.gridPowerText) {
+				el.gridPowerText.style.color = '';
+				// Reset to original content (will be updated by normal grid logic)
+			}
+			// Remove blinking animation
+			if (el.gridPowerContainer) {
+				el.gridPowerContainer.style.animation = '';
+			}
+		}
 		const fanStat = d.inverter.tuyaStatus;
 		const isFanOn = fanStat === JS_TUYA_STATE_ON;
 		if (el.inverterFanIconDiv) { el.inverterFanIconDiv.classList.toggle('dimmed', !isFanOn); }
@@ -471,15 +547,18 @@ export function updateFlowBoard(flowBoardData) {
 			if (el.inverterFanSvg && typeof el.inverterFanSvg.animationsPaused === 'function') {
 				isFanOn ? el.inverterFanSvg.unpauseAnimations() : el.inverterFanSvg.pauseAnimations();
 			}
-		} catch (e) {}
+		} catch (e) { }
 		if (el.inverterFanWrapper) { el.inverterFanWrapper.title = `FAN: ${fanStat || 'N/A'}`; }
 
 		const faultLights = [el.faultLight1, el.faultLight2, el.faultLight3, el.faultLight4];
 		const invStatusText = (d.inverter.statusText || "").toLowerCase().trim();
 		let invColor = faultColors.unknown; let invTitle = `Inverter Status: ${d.inverter.statusText || 'Unknown'}`;
-		if (['generating', 'ok', 'normal', 'running'].some(kw => invStatusText.includes(kw))) { invColor = faultColors.good;
-		} else if (['fault', 'error', 'alarm', 'failed'].some(kw => invStatusText.includes(kw))) { invColor = faultColors.error;
-		} else if (['standby', 'waiting', 'idle', 'power limiting'].some(kw => invStatusText.includes(kw))) { invColor = faultColors.warning;
+		if (['generating', 'ok', 'normal', 'running'].some(kw => invStatusText.includes(kw))) {
+			invColor = faultColors.good;
+		} else if (['fault', 'error', 'alarm', 'failed'].some(kw => invStatusText.includes(kw))) {
+			invColor = faultColors.error;
+		} else if (['standby', 'waiting', 'idle', 'power limiting'].some(kw => invStatusText.includes(kw))) {
+			invColor = faultColors.warning;
 		} else if (invStatusText && invStatusText !== 'unknown' && invStatusText !== 'init') { invColor = faultColors.warning; }
 
 		if (faultLights[0]) { faultLights[0].style.backgroundColor = invColor; faultLights[0].title = invTitle; }
@@ -528,7 +607,7 @@ export function updateFlowBoard(flowBoardData) {
 		updateElementText(el.batterySocPercentText, soc, "%", 1);
 		updateElementText(el.batteryVolts, d.battery.volts, "V", 1);
 		updateElementText(el.batteryAmps, d.battery.amps, "A", 1);
-		
+
 		// Determine battery direction based on power instead of complex status text
 		let batteryDirection = "Idle";
 		if (typeof p === 'number') {
@@ -542,18 +621,21 @@ export function updateFlowBoard(flowBoardData) {
 		}
 		updateElementText(el.batteryStatus, batteryDirection, "", 0, "Idle");
 		updateElementText(el.batteryRuntimeText, d.battery.runtimeTextDisplay, "", 0, "N/A");
-		
-        if(el.batteryKwhUp) el.batteryKwhUp.textContent = `↑${formatNum(d.battery.kwhUp, 2)} kWh`;
-        if(el.batteryKwhDown) el.batteryKwhDown.textContent = `↓${formatNum(d.battery.kwhDown, 2)} kWh`;
+
+		if (el.batteryKwhUp) el.batteryKwhUp.textContent = `↑${formatNum(d.battery.kwhUp, 2)} kWh`;
+		if (el.batteryKwhDown) el.batteryKwhDown.textContent = `↓${formatNum(d.battery.kwhDown, 2)} kWh`;
 
 		let shouldHideBMSLight = false;
 		if (el.bmsPluginStatusLight && d.battery.hasOwnProperty('bmsPluginConnectionStatus')) {
 			const bmsPlugStat = String(d.battery.bmsPluginConnectionStatus).toLowerCase();
-			let col = faultColors.unknown; let title = `BMS Plugin: ${d.battery.bmsPluginConnectionStatus||'Unknown'}`;
+			let col = faultColors.unknown; let title = `BMS Plugin: ${d.battery.bmsPluginConnectionStatus || 'Unknown'}`;
 			const noBMSKeywords = ['unknown', 'not_loaded', 'disabled', 'not_applicable', 'not_configured', 'undefined', null];
-			if (noBMSKeywords.some(kw => bmsPlugStat.includes(kw) || d.battery.bmsPluginConnectionStatus === null)) { shouldHideBMSLight = true;
-			} else if (["connected", "ok", "active"].includes(bmsPlugStat)) { col = faultColors.good;
-			} else if (["disconnected", "error", "fault"].includes(bmsPlugStat)) { col = faultColors.error;
+			if (noBMSKeywords.some(kw => bmsPlugStat.includes(kw) || d.battery.bmsPluginConnectionStatus === null)) {
+				shouldHideBMSLight = true;
+			} else if (["connected", "ok", "active"].includes(bmsPlugStat)) {
+				col = faultColors.good;
+			} else if (["disconnected", "error", "fault"].includes(bmsPlugStat)) {
+				col = faultColors.error;
 			} else if (bmsPlugStat.includes("connecting") || bmsPlugStat.includes("initializing") || bmsPlugStat.includes("warning")) { col = faultColors.warning; }
 
 			el.bmsPluginStatusLight.style.display = shouldHideBMSLight ? 'none' : 'block';
@@ -594,10 +676,14 @@ export function updateFlowBoard(flowBoardData) {
 		animators.forEach(anim => {
 			let vis = false, newDir = anim.direction, curPwr = 0, maxPwr = 1;
 			const id = anim.id;
-			if (id.includes('pv-flow-indicator')) { curPwr = d.pvTotal.w; maxPwr = MAX_POWER_PV_TOTAL_STATIC; vis = curPwr > FLOW_THRESHOLD_W; newDir = 'forward';
-			} else if (id.includes('grid-flow-indicator')) { curPwr = d.grid.w; maxPwr = MAX_POWER_GRID; vis = !d.grid.noGrid && (Math.abs(curPwr) > FLOW_THRESHOLD_W); if (vis) newDir = curPwr > 0 ? 'forward' : 'backward';
-			} else if (id.includes('battery-flow-indicator')) { curPwr = d.battery.power; maxPwr = MAX_POWER_BATTERY; vis = Math.abs(curPwr) > FLOW_THRESHOLD_W; if (vis) newDir = d.battery.power < 0 ? 'forward' : 'backward';
-			} else if (id.includes('load-flow-indicator')) { curPwr = d.load.currentW; maxPwr = MAX_POWER_LOAD; vis = curPwr > FLOW_THRESHOLD_W; newDir = 'forward';
+			if (id.includes('pv-flow-indicator')) {
+				curPwr = d.pvTotal.w; maxPwr = MAX_POWER_PV_TOTAL_STATIC; vis = curPwr > FLOW_THRESHOLD_W; newDir = 'forward';
+			} else if (id.includes('grid-flow-indicator')) {
+				curPwr = d.grid.w; maxPwr = MAX_POWER_GRID; vis = !d.grid.noGrid && (Math.abs(curPwr) > FLOW_THRESHOLD_W); if (vis) newDir = curPwr > 0 ? 'forward' : 'backward';
+			} else if (id.includes('battery-flow-indicator')) {
+				curPwr = d.battery.power; maxPwr = MAX_POWER_BATTERY; vis = Math.abs(curPwr) > FLOW_THRESHOLD_W; if (vis) newDir = d.battery.power < 0 ? 'forward' : 'backward';
+			} else if (id.includes('load-flow-indicator')) {
+				curPwr = d.load.currentW; maxPwr = MAX_POWER_LOAD; vis = curPwr > FLOW_THRESHOLD_W; newDir = 'forward';
 			} else {
 				for (let i = 1; i <= 4; i++) {
 					if (id.includes(`pv${i}-to-total-flow-indicator`)) { curPwr = d.pv[i - 1].w; maxPwr = MAX_POWER_PV_STRING; vis = d.pv[i - 1].is_configured && curPwr > FLOW_THRESHOLD_W; newDir = 'forward'; break; }
@@ -608,7 +694,7 @@ export function updateFlowBoard(flowBoardData) {
 				anim.isVisible = vis;
 				anim.direction = newDir;
 				if (anim.indicator) {
-					if (!vis) { anim.indicator.classList.remove('visible'); } 
+					if (!vis) { anim.indicator.classList.remove('visible'); }
 					else { anim.currentDistance = (anim.direction === 'forward') ? 0 : anim.totalLength; anim.indicator.classList.add('visible'); }
 				}
 			}
