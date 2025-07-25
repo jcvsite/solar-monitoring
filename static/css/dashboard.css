@@ -2308,3 +2308,13 @@ body.dark #hourlyDateSelect {
 	border-color: #555;
 	background-color: #222;
 }
+/* --- Bl
+ink Animation for No Grid Status --- */
+@keyframes blink {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0.3;
+    }
+}
