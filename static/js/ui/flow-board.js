@@ -216,7 +216,47 @@ function updateElementText(element, value, unit = '', precision = 1, fallback = 
 			textContent = sanitizeString(value, fallback);
 		}
 	}
-	element.textContent = textContent;
+	
+	// Force DOM update to prevent stale values
+	if (element.textContent !== textContent) {
+		element.textContent = textContent;
+	}
+}
+
+/**
+ * Enhanced version of updateElementText with validation and return status.
+ * @param {HTMLElement} element - The DOM element to update.
+ * @param {*} value - The value to display.
+ * @param {string} [unit=''] - The unit to append to the value.
+ * @param {number} [precision=1] - The number of decimal places for numeric values.
+ * @param {string} [fallback='N/A'] - The text to display if the value is invalid.
+ * @returns {boolean} True if update was successful, false otherwise.
+ */
+function updateElementTextWithValidation(element, value, unit = '', precision = 1, fallback = 'N/A') {
+	if (!element) return false;
+	
+	const originalText = element.textContent;
+	updateElementText(element, value, unit, precision, fallback);
+	
+	// Verify the update actually took place
+	const expectedText = (() => {
+		if (value !== null && value !== undefined) {
+			const num = parseToFloatOrNull(value);
+			if (isValidNumber(num)) {
+				let text = formatNum(num, precision);
+				if (unit) text += ` ${unit}`;
+				return text;
+			}
+		}
+		return fallback;
+	})();
+	
+	const updateSuccessful = element.textContent === expectedText;
+	if (!updateSuccessful) {
+		console.warn(`[UPDATE VALIDATION FAILED] Expected: "${expectedText}", Got: "${element.textContent}"`);
+	}
+	
+	return updateSuccessful;
 }
 
 /**
@@ -600,11 +640,23 @@ export function updateFlowBoard(flowBoardData) {
 	if (d.battery) {
 		const p = parseFloat(d.battery.power) ?? 0;
 		const soc = parseFloat(d.battery.soc) ?? 0;
+		
+
+		
 		const isChg = p < -FLOW_THRESHOLD_W;
 		if (el.batteryPowerBorder) el.batteryPowerBorder.classList.toggle('charging', isChg);
 		if (el.batteryPowerText) el.batteryPowerText.classList.toggle('charging', isChg);
 		updateElementText(el.batteryPowerText, Math.abs(p), "W", 0);
-		updateElementText(el.batterySocPercentText, soc, "%", 1);
+		
+		// Enhanced SOC update with validation
+		const socUpdateResult = updateElementTextWithValidation(el.batterySocPercentText, soc, "%", 0, 'N/A');
+		if (!socUpdateResult && soc !== null && !isNaN(soc)) {
+			console.warn(`[SOC UPDATE FAILED] Attempting direct DOM update for SOC: ${soc}`);
+			if (el.batterySocPercentText) {
+				el.batterySocPercentText.textContent = `${soc.toFixed(0)} %`;
+			}
+		}
+		
 		updateElementText(el.batteryVolts, d.battery.volts, "V", 1);
 		updateElementText(el.batteryAmps, d.battery.amps, "A", 1);
 
