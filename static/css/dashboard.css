@@ -1014,7 +1014,7 @@ body.dark .energy-flow-board .load-house-icon svg .load-icon-window-fill {
 }
 .energy-flow-board .battery-soc-text .value-text {
     color: var(--flow-text-battery);
-    font-size: 3.4rem;
+    font-size: 3.7rem;
 }
 .energy-flow-board .battery-kwh-up-text {
     position: absolute;
@@ -2317,4 +2317,59 @@ ink Animation for No Grid Status --- */
     51%, 100% {
         opacity: 0.3;
     }
+}/* Fl
+ow Board Refresh Button - Hover Only */
+.flow-board-refresh-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    background: var(--flow-text-pv);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+}
+
+.energy-flow-diagram-container:hover .flow-board-refresh-btn {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.flow-board-refresh-btn:hover {
+    background: var(--flow-border-pv);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.flow-board-refresh-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: white;
+    stroke-width: 2;
+}
+
+.flow-board-refresh-btn.spinning svg {
+    animation: spin 1s linear infinite;
+}
+
+.flow-board-refresh-btn.spinning {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
