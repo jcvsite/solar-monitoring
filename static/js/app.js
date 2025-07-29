@@ -58,6 +58,10 @@ let powerChart, historicalEnergyChart, hourlyEnergyChart;
 let bmsDataAvailable = false;
 /** Caches the last BMS data payload to avoid redundant iframe updates. */
 let lastBmsDataString = '';
+/** Tracks the last time battery SOC was updated to detect stale data. */
+let lastBatterySocUpdate = 0;
+/** Stores the last known battery SOC value for comparison. */
+let lastBatterySocValue = null;
 
 /**
  * A promise that resolves when the main application components (DOM, charts) are initialized.
@@ -85,6 +89,18 @@ const debouncedUpdatePowerChart = debounce((chart, state) => {
  * @param {object} data - The data payload from the server.
  */
 function processAndSanitizeData(data) {
+	// Track battery SOC updates for staleness detection
+	if (data.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
+		const newSocValue = data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT];
+		const now = Date.now();
+		
+		// Check if SOC value has actually changed
+		if (newSocValue !== lastBatterySocValue) {
+			lastBatterySocUpdate = now;
+			lastBatterySocValue = newSocValue;
+		}
+	}
+	
 	Object.assign(clientState, data);
 	for (const key in clientState) {
 		if (clientState.hasOwnProperty(key)) {
@@ -92,7 +108,10 @@ function processAndSanitizeData(data) {
 			if (typeof value === 'string') {
 				const trimmedValue = value.trim();
 				if (trimmedValue !== '' && !isNaN(trimmedValue) && !isNaN(parseFloat(trimmedValue))) {
-					clientState[key] = parseFloat(trimmedValue);
+					const parsedValue = parseFloat(trimmedValue);
+					clientState[key] = parsedValue;
+					
+
 					continue;
 				}
 				if ((trimmedValue.startsWith('{') && trimmedValue.endsWith('}')) || (trimmedValue.startsWith('[') && trimmedValue.endsWith(']'))) {
@@ -188,9 +207,13 @@ function renderDashboard(state) {
 			categorizedAlerts: state[SDK.OPERATIONAL_CATEGORIZED_ALERTS_DICT],
 			pluginConnectionStatus: state[SDK.CORE_PLUGIN_CONNECTION_STATUS]
 		};
+		const batterySoc = state[SDK.BATTERY_STATE_OF_CHARGE_PERCENT] ?? 0;
+		
+
+		
 		flowBoardData.battery = {
 			power: state[SDK.BATTERY_POWER_WATTS] ?? 0,
-			soc: state[SDK.BATTERY_STATE_OF_CHARGE_PERCENT] ?? 0,
+			soc: batterySoc,
 			kwhUp: state[SDK.ENERGY_BATTERY_DAILY_CHARGE_KWH],
 			kwhDown: state[SDK.ENERGY_BATTERY_DAILY_DISCHARGE_KWH],
 			volts: state[SDK.BATTERY_VOLTAGE_VOLTS],
@@ -401,7 +424,14 @@ socket.on('full_update', async (data) => {
 socket.on('update', (data) => {
 	if (disconnectTimer) clearTimeout(disconnectTimer);
 	disconnectTimer = setTimeout(() => showDisconnectPopup("Connection stalled."), DISCONNECT_TIMEOUT_MS);
+	
+	// Check for potential stale battery data before processing
+	const currentSoc = clientState[SDK.BATTERY_STATE_OF_CHARGE_PERCENT];
+	const newSoc = data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT];
+	
 	processAndSanitizeData(data);
+
+
 
 	debouncedUpdatePowerChart(powerChart, clientState);
 });
@@ -592,6 +622,36 @@ window.onload = () => {
     });
     document.getElementById('exportHourlyChartBtn')?.addEventListener('click', () => exportChartDataToCSV(hourlyEnergyChart, `hourly_summary_${hourlyDateSelect.value}`));
 
+	// Flow board refresh button functionality
+	const flowBoardRefreshBtn = document.getElementById('flowBoardRefreshBtn');
+	if (flowBoardRefreshBtn) {
+		flowBoardRefreshBtn.addEventListener('click', () => {
+			console.log('[MANUAL] Flow board refresh requested by user');
+			flowBoardRefreshBtn.classList.add('spinning');
+			socket.emit('request_full_update');
+			showToast('Refreshing flow board data...', 'info', 2000);
+			
+			// Remove spinning animation after 2 seconds
+			setTimeout(() => {
+				flowBoardRefreshBtn.classList.remove('spinning');
+			}, 2000);
+		});
+	}
+
+	// Set up periodic check for stale data
+	setInterval(() => {
+		if (initialDataReceived && socket.connected) {
+			const now = Date.now();
+			const timeSinceLastSocUpdate = now - lastBatterySocUpdate;
+			
+			// If battery SOC hasn't updated in 15 minutes, auto-request fresh data
+			if (timeSinceLastSocUpdate > 900000) { // 15 minutes
+				console.warn(`[STALE DATA] Battery SOC hasn't updated for ${Math.round(timeSinceLastSocUpdate / 60000)} minutes - requesting refresh`);
+				socket.emit('request_full_update');
+				showToast('Refreshing stale data...', 'warning', 3000);
+			}
+		}
+	}, 300000); // Check every 5 minutes
 
 	resolveAppReady();
 };
