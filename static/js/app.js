@@ -40,7 +40,13 @@ import {
 const socket = io({
 	transports: ['websocket'],
 	upgrade: false,
-	rememberUpgrade: false
+	rememberUpgrade: false,
+	reconnection: true,
+	reconnectionDelay: 1000,
+	reconnectionDelayMax: 5000,
+	maxReconnectionAttempts: Infinity,
+	timeout: 20000,
+	forceNew: true
 });
 
 // --- Application State ---
@@ -52,16 +58,17 @@ let initialDataReceived = false;
 let chartsInitialized = false;
 /** Timer to detect stalled connections. */
 let disconnectTimer = null;
+/** Timer for connection health checks. */
+let connectionHealthTimer = null;
+/** Last time we received any data from server. */
+let lastDataReceived = Date.now();
 /** Chart.js instances. */
 let powerChart, historicalEnergyChart, hourlyEnergyChart;
 /** Flag indicating if BMS data is present and the tab should be shown. */
 let bmsDataAvailable = false;
 /** Caches the last BMS data payload to avoid redundant iframe updates. */
 let lastBmsDataString = '';
-/** Tracks the last time battery SOC was updated to detect stale data. */
-let lastBatterySocUpdate = 0;
-/** Stores the last known battery SOC value for comparison. */
-let lastBatterySocValue = null;
+
 
 /**
  * A promise that resolves when the main application components (DOM, charts) are initialized.
@@ -89,16 +96,12 @@ const debouncedUpdatePowerChart = debounce((chart, state) => {
  * @param {object} data - The data payload from the server.
  */
 function processAndSanitizeData(data) {
-	// Track battery SOC updates for staleness detection
+	// Update last data received timestamp
+	lastDataReceived = Date.now();
+	
+	// Track battery SOC updates for debugging
 	if (data.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
-		const newSocValue = data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT];
-		const now = Date.now();
-		
-		// Check if SOC value has actually changed
-		if (newSocValue !== lastBatterySocValue) {
-			lastBatterySocUpdate = now;
-			lastBatterySocValue = newSocValue;
-		}
+		console.log(`[SOC DEBUG] Battery SOC received: ${data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]}%`);
 	}
 	
 	Object.assign(clientState, data);
@@ -154,6 +157,53 @@ function updateNotificationDisplay() {
 		updateStatusElement.innerHTML = '';
 		updateStatusElement.style.display = 'none';
 	}
+}
+
+/**
+ * Updates the connection status indicator in the footer.
+ */
+function updateConnectionStatus(status) {
+	const statusElement = document.getElementById('connectionStatus');
+	if (!statusElement) return;
+	
+	statusElement.className = 'connection-status';
+	statusElement.title = `Connection: ${status}`;
+	
+	switch (status) {
+		case 'connected':
+			statusElement.classList.add('connected');
+			break;
+		case 'connecting':
+		case 'reconnecting':
+			statusElement.classList.add('connecting');
+			break;
+		case 'disconnected':
+		default:
+			statusElement.classList.add('disconnected');
+			break;
+	}
+}
+
+/**
+ * Monitors connection health and forces reconnection if no data received for too long.
+ */
+function startConnectionHealthMonitor() {
+	if (connectionHealthTimer) clearInterval(connectionHealthTimer);
+	
+	connectionHealthTimer = setInterval(() => {
+		const timeSinceLastData = Date.now() - lastDataReceived;
+		const maxStaleTime = 5 * 60 * 1000; // 5 minutes
+		
+		if (timeSinceLastData > maxStaleTime && socket.connected) {
+			console.warn(`[CONNECTION HEALTH] No data received for ${Math.round(timeSinceLastData / 1000)}s, forcing reconnection`);
+			showToast('Connection appears stale, reconnecting...', 'warning', 3000);
+			updateConnectionStatus('reconnecting');
+			socket.disconnect();
+			setTimeout(() => {
+				socket.connect();
+			}, 1000);
+		}
+	}, 30000); // Check every 30 seconds
 }
 
 /**
@@ -370,23 +420,64 @@ function masterRenderLoop() {
 
 // --- Socket Event Handlers ---
 socket.on('connect', () => {
+	console.log('Socket connected successfully');
 	hideDisconnectPopup();
+	updateConnectionStatus('connected');
 	if (disconnectTimer) clearTimeout(disconnectTimer);
 	clientState = {};
 	initialDataReceived = false;
+	lastDataReceived = Date.now();
+	startConnectionHealthMonitor();
+	showToast('Connected to server', 'success', 2000);
 });
 
 socket.on('disconnect', (reason) => {
 	console.error('Socket disconnected:', reason);
+	updateConnectionStatus('disconnected');
 	showDisconnectPopup(`Disconnected: ${reason}. Reconnecting...`);
 	if (disconnectTimer) clearTimeout(disconnectTimer);
 	initialDataReceived = false;
+});
+
+socket.on('connect_error', (error) => {
+	console.error('Socket connection error:', error);
+	updateConnectionStatus('connecting');
+	showDisconnectPopup(`Connection error: ${error.message}. Retrying...`);
+});
+
+socket.on('reconnect', (attemptNumber) => {
+	console.log(`Socket reconnected after ${attemptNumber} attempts`);
+	updateConnectionStatus('connected');
+	showToast(`Reconnected after ${attemptNumber} attempts`, 'success', 3000);
+	hideDisconnectPopup();
+	// Request fresh data after reconnection
+	socket.emit('request_full_update');
+});
+
+socket.on('reconnect_attempt', (attemptNumber) => {
+	console.log(`Reconnection attempt ${attemptNumber}`);
+	updateConnectionStatus('reconnecting');
+	showDisconnectPopup(`Reconnecting... (attempt ${attemptNumber})`);
+});
+
+socket.on('reconnect_error', (error) => {
+	console.error('Reconnection error:', error);
+});
+
+socket.on('reconnect_failed', () => {
+	console.error('Failed to reconnect after maximum attempts');
+	showDisconnectPopup('Failed to reconnect. Please refresh the page.');
 });
 
 /** Handles the initial, large data payload from the server upon connection. */
 socket.on('full_update', async (data) => {
 	if (disconnectTimer) clearTimeout(disconnectTimer);
 	disconnectTimer = setTimeout(() => showDisconnectPopup("Connection stalled."), DISCONNECT_TIMEOUT_MS);
+
+	// Log battery SOC data for debugging
+	if (data.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
+		console.log(`[FULL_UPDATE] Battery SOC: ${data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]}%`);
+	}
 
 	processAndSanitizeData(data);
 
@@ -425,13 +516,12 @@ socket.on('update', (data) => {
 	if (disconnectTimer) clearTimeout(disconnectTimer);
 	disconnectTimer = setTimeout(() => showDisconnectPopup("Connection stalled."), DISCONNECT_TIMEOUT_MS);
 	
-	// Check for potential stale battery data before processing
-	const currentSoc = clientState[SDK.BATTERY_STATE_OF_CHARGE_PERCENT];
-	const newSoc = data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT];
+	// Log battery SOC updates for debugging
+	if (data.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
+		console.log(`[UPDATE] Battery SOC: ${data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]}%`);
+	}
 	
 	processAndSanitizeData(data);
-
-
 
 	debouncedUpdatePowerChart(powerChart, clientState);
 });
@@ -638,20 +728,26 @@ window.onload = () => {
 		});
 	}
 
-	// Set up periodic check for stale data
-	setInterval(() => {
-		if (initialDataReceived && socket.connected) {
-			const now = Date.now();
-			const timeSinceLastSocUpdate = now - lastBatterySocUpdate;
+	// Manual reconnect button functionality
+	const manualReconnectBtn = document.getElementById('manualReconnectBtn');
+	if (manualReconnectBtn) {
+		manualReconnectBtn.addEventListener('click', () => {
+			console.log('[MANUAL] Manual reconnection requested by user');
+			manualReconnectBtn.classList.add('spinning');
+			showToast('Forcing reconnection...', 'info', 3000);
 			
-			// If battery SOC hasn't updated in 15 minutes, auto-request fresh data
-			if (timeSinceLastSocUpdate > 900000) { // 15 minutes
-				console.warn(`[STALE DATA] Battery SOC hasn't updated for ${Math.round(timeSinceLastSocUpdate / 60000)} minutes - requesting refresh`);
-				socket.emit('request_full_update');
-				showToast('Refreshing stale data...', 'warning', 3000);
+			// Force disconnect and reconnect
+			if (socket.connected) {
+				socket.disconnect();
 			}
-		}
-	}, 300000); // Check every 5 minutes
+			setTimeout(() => {
+				socket.connect();
+				manualReconnectBtn.classList.remove('spinning');
+			}, 1000);
+		});
+	}
+
+
 
 	resolveAppReady();
 };
