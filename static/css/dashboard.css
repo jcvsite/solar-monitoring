@@ -2372,4 +2372,67 @@ ow Board Refresh Button - Hover Only */
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}/* Manu
+al reconnect button in disconnect popup */
+.manual-reconnect-btn {
+    margin-top: 15px;
+    padding: 8px 16px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.manual-reconnect-btn:hover {
+    background: var(--accent-color-hover);
+    transform: translateY(-1px);
+}
+
+.manual-reconnect-btn:active {
+    transform: translateY(0);
+}
+
+.manual-reconnect-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.manual-reconnect-btn.spinning svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}/
+* Connection status indicator */
+.connection-status {
+    margin-left: 10px;
+    font-size: 16px;
+    transition: color 0.3s ease;
+}
+
+.connection-status.connected {
+    color: #4CAF50;
+}
+
+.connection-status.connecting {
+    color: #FF9800;
+    animation: pulse 1s infinite;
+}
+
+.connection-status.disconnected {
+    color: #F44336;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
