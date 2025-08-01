@@ -1558,7 +1558,7 @@ body.dark .energy-flow-board .load-house-icon svg .load-icon-window-fill {
 }
 .energy-flow-board .pv2-container {
     position: absolute;
-    left: 857px;
+    left: 865px;
     top: 105px;
     width: 213px;
     height: 78px;
@@ -1787,6 +1787,7 @@ body.dark .energy-flow-board .load-house-icon svg .load-icon-window-fill {
 .energy-flow-board .flow-line-container svg {
     display: block;
     overflow: visible;
+    shape-rendering: geometricPrecision;
 }
 .energy-flow-board .flow-line-container svg path {
     fill: none;
