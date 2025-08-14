@@ -648,13 +648,25 @@ export function updateFlowBoard(flowBoardData) {
 		if (el.batteryPowerText) el.batteryPowerText.classList.toggle('charging', isChg);
 		updateElementText(el.batteryPowerText, Math.abs(p), "W", 0);
 		
-		// Enhanced SOC update with validation
-		const socUpdateResult = updateElementTextWithValidation(el.batterySocPercentText, soc, "%", 0, 'N/A');
-		if (!socUpdateResult && soc !== null && !isNaN(soc)) {
-			console.warn(`[SOC UPDATE FAILED] Attempting direct DOM update for SOC: ${soc}`);
-			if (el.batterySocPercentText) {
-				el.batterySocPercentText.textContent = `${soc.toFixed(0)} %`;
+		// Enhanced SOC update with validation and forced refresh
+		console.log(`[SOC DEBUG] Updating SOC display: ${soc}%`);
+		
+		// Force update the SOC display
+		if (el.batterySocPercentText && soc !== null && !isNaN(soc)) {
+			const newSocText = `${soc.toFixed(0)}%`;
+			const currentText = el.batterySocPercentText.textContent;
+			
+			if (currentText !== newSocText) {
+				console.log(`[SOC UPDATE] Changing SOC from "${currentText}" to "${newSocText}"`);
+				el.batterySocPercentText.textContent = newSocText;
+				
+				// Force DOM refresh
+				el.batterySocPercentText.style.display = 'none';
+				el.batterySocPercentText.offsetHeight; // Trigger reflow
+				el.batterySocPercentText.style.display = '';
 			}
+		} else {
+			console.warn(`[SOC UPDATE FAILED] Invalid SOC value or missing element: ${soc}`);
 		}
 		
 		updateElementText(el.batteryVolts, d.battery.volts, "V", 1);
