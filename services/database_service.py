@@ -5,7 +5,7 @@ import threading
 import queue
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 from core.app_state import AppState
 from plugins.plugin_interface import StandardDataKeys, DevicePlugin
@@ -155,39 +155,226 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to store power data: {e}")
 
-    def backfill_yesterday_summary(self):
+    def _should_protect_yesterday_data(self, existing_summary: Dict[str, Any], backfill_summary: Dict[str, Any]) -> Tuple[bool, str]:
         """
-        Attempts to backfill yesterday's energy summary from connected plugins.
+        Intelligent helper method to determine if existing yesterday's data should be protected from backfill overwrite.
+        
+        Implements smart detection rules:
+        - Existing data > 0.5 kWh total is considered real data worth protecting
+        - Backfill data < 20% of existing data is considered suspicious
+        - Returns protection decision with detailed reason for logging
+        
+        Args:
+            existing_summary: Dictionary containing existing daily summary data from database
+            backfill_summary: Dictionary containing new backfill data from plugin
+            
+        Returns:
+            Tuple of (should_protect: bool, reason: str) where:
+            - should_protect: True if existing data should be protected from overwrite
+            - reason: Detailed explanation of the protection decision for logging
+        """
+        # Define protection thresholds
+        MIN_ENERGY_THRESHOLD_KWH = 0.5  # Minimum total energy to consider "real" data
+        SUSPICIOUS_RATIO = 0.2  # If backfill < 20% of existing, it's suspicious
+        
+        # Extract and validate existing data values
+        existing_pv = existing_summary.get('pv_yield_kwh', 0.0) or 0.0
+        existing_grid_import = existing_summary.get('grid_import_kwh', 0.0) or 0.0
+        existing_load = existing_summary.get('load_energy_kwh', 0.0) or 0.0
+        existing_batt_charge = existing_summary.get('battery_charge_kwh', 0.0) or 0.0
+        existing_batt_discharge = existing_summary.get('battery_discharge_kwh', 0.0) or 0.0
+        existing_grid_export = existing_summary.get('grid_export_kwh', 0.0) or 0.0
+        
+        # Calculate total existing energy flows (key indicators of real data)
+        existing_total_energy = existing_pv + existing_grid_import + existing_load
+        
+        # Extract and validate backfill data values
+        backfill_pv = backfill_summary.get(StandardDataKeys.ENERGY_PV_DAILY_KWH, 0.0) or 0.0
+        backfill_grid_import = backfill_summary.get(StandardDataKeys.ENERGY_GRID_DAILY_IMPORT_KWH, 0.0) or 0.0
+        backfill_load = backfill_summary.get(StandardDataKeys.ENERGY_LOAD_DAILY_KWH, 0.0) or 0.0
+        
+        # Calculate total backfill energy flows
+        backfill_total_energy = backfill_pv + backfill_grid_import + backfill_load
+        
+        # Rule 1: If existing data is minimal (< 0.5 kWh total), allow backfill
+        if existing_total_energy < MIN_ENERGY_THRESHOLD_KWH:
+            return False, f"Existing data minimal ({existing_total_energy:.2f} kWh total), allowing backfill ({backfill_total_energy:.2f} kWh total)"
+        
+        # Rule 2: If backfill data is suspicious (< 20% of existing), protect existing data
+        if backfill_total_energy > 0 and backfill_total_energy < (existing_total_energy * SUSPICIOUS_RATIO):
+            return True, f"Suspicious backfill detected: existing {existing_total_energy:.2f}kWh vs backfill {backfill_total_energy:.2f}kWh ({(backfill_total_energy/existing_total_energy*100):.1f}% of existing) - threshold {SUSPICIOUS_RATIO*100:.0f}%"
+        
+        # Rule 3: If existing data is significant (> 0.5 kWh) and backfill is much lower, protect
+        if existing_total_energy >= MIN_ENERGY_THRESHOLD_KWH and backfill_total_energy < MIN_ENERGY_THRESHOLD_KWH:
+            return True, f"Protecting significant existing data ({existing_total_energy:.2f}kWh) from minimal backfill ({backfill_total_energy:.2f}kWh) - threshold {MIN_ENERGY_THRESHOLD_KWH}kWh"
+        
+        # Rule 4: Allow backfill if it's reasonable compared to existing data
+        if backfill_total_energy >= (existing_total_energy * SUSPICIOUS_RATIO):
+            return False, f"Backfill data reasonable: existing {existing_total_energy:.2f} kWh vs backfill {backfill_total_energy:.2f} kWh, allowing update"
+        
+        # Default: Allow backfill (conservative approach for edge cases)
+        return False, f"Default allow: existing {existing_total_energy:.2f} kWh vs backfill {backfill_total_energy:.2f} kWh"
+
+    def backfill_yesterday_summary(self, force_overwrite: bool = False):
+        """
+        Attempts to backfill yesterday's energy summary from connected plugins with intelligent data protection.
         
         This method is called on application startup to fill in missing daily
         summary data for yesterday. It queries connected plugins that support
         the read_yesterday_energy_summary() method to get historical energy totals.
         
+        Enhanced with protection logic to prevent overwriting existing historical data
+        with potentially incorrect backfill values (e.g., reset inverter readings).
+        
         This is particularly useful when the application was offline yesterday
         but the inverter/BMS devices stored the energy totals internally.
+        
+        Args:
+            force_overwrite: If True, bypasses protection checks and forces overwrite of existing data.
+                           Defaults to False for safety. Use with caution.
         """
         try:
             yesterday = datetime.now(self.app_state.local_tzinfo) - timedelta(days=1)
             yesterday_str = yesterday.strftime('%Y-%m-%d')
+            
+            # Query database for yesterday's existing summary data
+            existing_summary = None
             with self.app_state.db_lock, sqlite3.connect(self.db_file, **self.conn_params) as conn:
+                conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT 1 FROM daily_summary WHERE date = ?", (yesterday_str,))
-                if cursor.fetchone():
-                    logger.info(f"Summary for yesterday ({yesterday_str}) already exists. No backfill needed.")
-                    return
-            logger.info(f"No summary found for {yesterday_str}. Checking connected plugins for backfill data.")
+                cursor.execute("SELECT * FROM daily_summary WHERE date = ?", (yesterday_str,))
+                existing_row = cursor.fetchone()
+                if existing_row:
+                    existing_summary = dict(existing_row)
+            
+            # If no existing data found, proceed with normal backfill
+            if not existing_summary:
+                logger.info(f"No summary found for {yesterday_str}. Checking connected plugins for backfill data.")
+                for name, plugin in self.app_state.active_plugin_instances.items():
+                    if plugin.is_connected and hasattr(plugin, 'read_yesterday_energy_summary'):
+                        logger.info(f"Querying connected plugin '{name}' for yesterday's summary...")
+                        summary_data = plugin.read_yesterday_energy_summary()
+                        if summary_data and isinstance(summary_data, dict):
+                            # Extract backfill values for logging
+                            backfill_pv = summary_data.get(StandardDataKeys.ENERGY_PV_DAILY_KWH, 0.0) or 0.0
+                            backfill_grid_import = summary_data.get(StandardDataKeys.ENERGY_GRID_DAILY_IMPORT_KWH, 0.0) or 0.0
+                            backfill_load = summary_data.get(StandardDataKeys.ENERGY_LOAD_DAILY_KWH, 0.0) or 0.0
+                            backfill_batt_charge = summary_data.get(StandardDataKeys.ENERGY_BATTERY_DAILY_CHARGE_KWH, 0.0) or 0.0
+                            backfill_batt_discharge = summary_data.get(StandardDataKeys.ENERGY_BATTERY_DAILY_DISCHARGE_KWH, 0.0) or 0.0
+                            backfill_grid_export = summary_data.get(StandardDataKeys.ENERGY_GRID_DAILY_EXPORT_KWH, 0.0) or 0.0
+                            
+                            logger.info(f"Plugin '{name}' provided yesterday's summary data. Storing backfill values: "
+                                      f"PV={backfill_pv:.2f}kWh, Grid_Import={backfill_grid_import:.2f}kWh, "
+                                      f"Load={backfill_load:.2f}kWh, Batt_Charge={backfill_batt_charge:.2f}kWh, "
+                                      f"Batt_Discharge={backfill_batt_discharge:.2f}kWh, Grid_Export={backfill_grid_export:.2f}kWh")
+                            self._store_daily_summary(yesterday_str, summary_data)
+                            return 
+                        else:
+                            logger.info(f"Plugin '{name}' did not return valid summary data.")
+                    else:
+                        logger.debug(f"Skipping plugin '{name}' for backfill (not connected or does not support feature).")
+                
+                # If we reach here, no plugin provided valid backfill data for missing summary
+                logger.info(f"No valid backfill data available from any connected plugin for missing summary {yesterday_str}.")
+                return
+            
+            # Existing data found - check if we should attempt backfill with protection
+            # Extract existing values for comprehensive logging
+            existing_pv = existing_summary.get('pv_yield_kwh', 0.0) or 0.0
+            existing_grid_import = existing_summary.get('grid_import_kwh', 0.0) or 0.0
+            existing_load = existing_summary.get('load_energy_kwh', 0.0) or 0.0
+            existing_batt_charge = existing_summary.get('battery_charge_kwh', 0.0) or 0.0
+            existing_batt_discharge = existing_summary.get('battery_discharge_kwh', 0.0) or 0.0
+            existing_grid_export = existing_summary.get('grid_export_kwh', 0.0) or 0.0
+            
+            logger.info(f"Existing summary found for {yesterday_str}. Current values: "
+                       f"PV={existing_pv:.2f}kWh, Grid_Import={existing_grid_import:.2f}kWh, "
+                       f"Load={existing_load:.2f}kWh, Batt_Charge={existing_batt_charge:.2f}kWh, "
+                       f"Batt_Discharge={existing_batt_discharge:.2f}kWh, Grid_Export={existing_grid_export:.2f}kWh. "
+                       f"Evaluating backfill with protection logic.")
+            
             for name, plugin in self.app_state.active_plugin_instances.items():
                 if plugin.is_connected and hasattr(plugin, 'read_yesterday_energy_summary'):
                     logger.info(f"Querying connected plugin '{name}' for yesterday's summary...")
                     summary_data = plugin.read_yesterday_energy_summary()
                     if summary_data and isinstance(summary_data, dict):
-                        logger.info(f"Plugin '{name}' provided yesterday's summary data. Storing it.")
-                        self._store_daily_summary(yesterday_str, summary_data)
-                        return 
+                        # Extract backfill values for comprehensive logging
+                        backfill_pv = summary_data.get(StandardDataKeys.ENERGY_PV_DAILY_KWH, 0.0) or 0.0
+                        backfill_grid_import = summary_data.get(StandardDataKeys.ENERGY_GRID_DAILY_IMPORT_KWH, 0.0) or 0.0
+                        backfill_load = summary_data.get(StandardDataKeys.ENERGY_LOAD_DAILY_KWH, 0.0) or 0.0
+                        backfill_batt_charge = summary_data.get(StandardDataKeys.ENERGY_BATTERY_DAILY_CHARGE_KWH, 0.0) or 0.0
+                        backfill_batt_discharge = summary_data.get(StandardDataKeys.ENERGY_BATTERY_DAILY_DISCHARGE_KWH, 0.0) or 0.0
+                        backfill_grid_export = summary_data.get(StandardDataKeys.ENERGY_GRID_DAILY_EXPORT_KWH, 0.0) or 0.0
+                        
+                        logger.info(f"Plugin '{name}' provided backfill data: "
+                                  f"PV={backfill_pv:.2f}kWh, Grid_Import={backfill_grid_import:.2f}kWh, "
+                                  f"Load={backfill_load:.2f}kWh, Batt_Charge={backfill_batt_charge:.2f}kWh, "
+                                  f"Batt_Discharge={backfill_batt_discharge:.2f}kWh, Grid_Export={backfill_grid_export:.2f}kWh")
+                        
+                        # Call protection helper method to evaluate if backfill should proceed
+                        # Skip protection checks if force overwrite is enabled
+                        if force_overwrite:
+                            # Force overwrite enabled - bypass protection and log warning
+                            logger.warning(f"FORCE OVERWRITE ENABLED for {yesterday_str}: Bypassing data protection checks. "
+                                         f"Audit trail - Before: PV={existing_pv:.2f}, Grid_Import={existing_grid_import:.2f}, "
+                                         f"Load={existing_load:.2f}, Batt_Charge={existing_batt_charge:.2f}, "
+                                         f"Batt_Discharge={existing_batt_discharge:.2f}, Grid_Export={existing_grid_export:.2f}kWh | "
+                                         f"After: PV={backfill_pv:.2f}, Grid_Import={backfill_grid_import:.2f}, "
+                                         f"Load={backfill_load:.2f}, Batt_Charge={backfill_batt_charge:.2f}, "
+                                         f"Batt_Discharge={backfill_batt_discharge:.2f}, Grid_Export={backfill_grid_export:.2f}kWh. "
+                                         f"Forcing update from plugin '{name}'.")
+                            self._store_daily_summary(yesterday_str, summary_data)
+                            return
+                        
+                        should_protect, reason = self._should_protect_yesterday_data(existing_summary, summary_data)
+                        
+                        if should_protect:
+                            # Determine if this is suspicious data for WARNING level logging
+                            existing_total = existing_pv + existing_grid_import + existing_load
+                            backfill_total = backfill_pv + backfill_grid_import + backfill_load
+                            
+                            if existing_total > 0.5 and backfill_total > 0 and backfill_total < (existing_total * 0.2):
+                                # WARNING level for suspicious backfill data
+                                logger.warning(f"SUSPICIOUS BACKFILL DETECTED for {yesterday_str}: {reason}. "
+                                             f"Existing total: {existing_total:.2f}kWh vs Backfill total: {backfill_total:.2f}kWh "
+                                             f"({(backfill_total/existing_total*100):.1f}% of existing). "
+                                             f"Audit trail - Before: PV={existing_pv:.2f}, Grid_Import={existing_grid_import:.2f}, Load={existing_load:.2f}kWh | "
+                                             f"Rejected: PV={backfill_pv:.2f}, Grid_Import={backfill_grid_import:.2f}, Load={backfill_load:.2f}kWh. "
+                                             f"Skipping backfill from plugin '{name}'.")
+                            else:
+                                # INFO level for normal protection (existing data protection)
+                                logger.info(f"BACKFILL PROTECTION ACTIVE for {yesterday_str}: {reason}. "
+                                          f"Audit trail - Existing: PV={existing_pv:.2f}, Grid_Import={existing_grid_import:.2f}, "
+                                          f"Load={existing_load:.2f}, Batt_Charge={existing_batt_charge:.2f}, "
+                                          f"Batt_Discharge={existing_batt_discharge:.2f}, Grid_Export={existing_grid_export:.2f}kWh | "
+                                          f"Rejected: PV={backfill_pv:.2f}, Grid_Import={backfill_grid_import:.2f}, "
+                                          f"Load={backfill_load:.2f}, Batt_Charge={backfill_batt_charge:.2f}, "
+                                          f"Batt_Discharge={backfill_batt_discharge:.2f}, Grid_Export={backfill_grid_export:.2f}kWh. "
+                                          f"Skipping backfill from plugin '{name}'.")
+                            return
+                        else:
+                            # Protection allows backfill - log successful operation with before/after values
+                            logger.info(f"BACKFILL APPROVED for {yesterday_str}: {reason}. "
+                                      f"Audit trail - Before: PV={existing_pv:.2f}, Grid_Import={existing_grid_import:.2f}, "
+                                      f"Load={existing_load:.2f}, Batt_Charge={existing_batt_charge:.2f}, "
+                                      f"Batt_Discharge={existing_batt_discharge:.2f}, Grid_Export={existing_grid_export:.2f}kWh | "
+                                      f"After: PV={backfill_pv:.2f}, Grid_Import={backfill_grid_import:.2f}, "
+                                      f"Load={backfill_load:.2f}, Batt_Charge={backfill_batt_charge:.2f}, "
+                                      f"Batt_Discharge={backfill_batt_discharge:.2f}, Grid_Export={backfill_grid_export:.2f}kWh. "
+                                      f"Updating from plugin '{name}'.")
+                            self._store_daily_summary(yesterday_str, summary_data)
+                            return
                     else:
                         logger.info(f"Plugin '{name}' did not return valid summary data.")
                 else:
                     logger.debug(f"Skipping plugin '{name}' for backfill (not connected or does not support feature).")
+            
+            # If we reach here, no plugin provided valid backfill data
+            logger.info(f"No valid backfill data available from any connected plugin for {yesterday_str}. "
+                       f"Existing data remains protected: PV={existing_pv:.2f}, Grid_Import={existing_grid_import:.2f}, "
+                       f"Load={existing_load:.2f}, Batt_Charge={existing_batt_charge:.2f}, "
+                       f"Batt_Discharge={existing_batt_discharge:.2f}, Grid_Export={existing_grid_export:.2f}kWh")
+                    
         except Exception as e:
             logger.error(f"Error during yesterday's summary backfill: {e}", exc_info=True)
 
@@ -265,7 +452,12 @@ class DatabaseService:
                         grid_export_kwh=excluded.grid_export_kwh, 
                         load_energy_kwh=excluded.load_energy_kwh
                 """, (date_str, *final_values))
-            logger.info(f"Successfully stored/updated daily summary for date: {date_str}")
+            
+            # Enhanced logging with detailed values for audit trail
+            logger.info(f"Successfully stored/updated daily summary for {date_str}: "
+                       f"PV={final_values[0]:.2f}kWh, Batt_Charge={final_values[1]:.2f}kWh, "
+                       f"Batt_Discharge={final_values[2]:.2f}kWh, Grid_Import={final_values[3]:.2f}kWh, "
+                       f"Grid_Export={final_values[4]:.2f}kWh, Load={final_values[5]:.2f}kWh")
         except Exception as e:
             logger.error(f"Failed to store daily summary for date {date_str}: {e}")
 
