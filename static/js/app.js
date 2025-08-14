@@ -25,15 +25,15 @@ import {
 	initializeCharts,
 	updatePowerChart,
 	updateHistoryChart,
-    updateHourlyChart,
+	updateHourlyChart,
 	handleHistoryPeriodChange,
 	exportChartDataToCSV,
 	updateChartTheme
 } from './ui/charts.js';
 import {
-    initWeather,
-    updateWeatherTheme,
-    handleMapResize
+	initWeather,
+	updateWeatherTheme,
+	handleMapResize
 } from './ui/weather.js';
 
 // --- Socket.IO Connection ---
@@ -84,10 +84,10 @@ const appReadyPromise = new Promise(resolve => {
  * with rapid-fire updates from the 'update' socket event.
  */
 const debouncedUpdatePowerChart = debounce((chart, state) => {
-    if (initialDataReceived && chart) {
-        updatePowerChart(chart, state);
-    }
-}, 500); 
+	if (initialDataReceived && chart) {
+		updatePowerChart(chart, state);
+	}
+}, 500);
 
 /**
  * Processes incoming data from the server, merging it into the clientState.
@@ -98,12 +98,12 @@ const debouncedUpdatePowerChart = debounce((chart, state) => {
 function processAndSanitizeData(data) {
 	// Update last data received timestamp
 	lastDataReceived = Date.now();
-	
+
 	// Track battery SOC updates for debugging
 	if (data.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
 		console.log(`[SOC DEBUG] Battery SOC received: ${data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]}%`);
 	}
-	
+
 	Object.assign(clientState, data);
 	for (const key in clientState) {
 		if (clientState.hasOwnProperty(key)) {
@@ -113,7 +113,7 @@ function processAndSanitizeData(data) {
 				if (trimmedValue !== '' && !isNaN(trimmedValue) && !isNaN(parseFloat(trimmedValue))) {
 					const parsedValue = parseFloat(trimmedValue);
 					clientState[key] = parsedValue;
-					
+
 
 					continue;
 				}
@@ -121,7 +121,8 @@ function processAndSanitizeData(data) {
 					try {
 						clientState[key] = JSON.parse(trimmedValue.replace(/'/g, '"'));
 					} catch (e) {
-						/* Ignore */ }
+						/* Ignore */
+}
 				}
 			}
 		}
@@ -136,7 +137,7 @@ function processAndSanitizeData(data) {
 			initialDataReceived = true;
 		}
 	}
-	
+
 	// Handle update notification display
 	updateNotificationDisplay();
 }
@@ -148,7 +149,7 @@ function processAndSanitizeData(data) {
 function updateNotificationDisplay() {
 	const updateStatusElement = document.getElementById('updateStatusMessage');
 	if (!updateStatusElement) return;
-	
+
 	// Only show notification if update check is completed and update is available
 	if (clientState.update_check_completed && clientState.update_available && clientState.latest_version) {
 		updateStatusElement.innerHTML = ` | <span style="color: #ff6b35; font-weight: bold;">🔄 Update v${clientState.latest_version} Available!</span>`;
@@ -165,10 +166,10 @@ function updateNotificationDisplay() {
 function updateConnectionStatus(status) {
 	const statusElement = document.getElementById('connectionStatus');
 	if (!statusElement) return;
-	
+
 	statusElement.className = 'connection-status';
 	statusElement.title = `Connection: ${status}`;
-	
+
 	switch (status) {
 		case 'connected':
 			statusElement.classList.add('connected');
@@ -189,11 +190,19 @@ function updateConnectionStatus(status) {
  */
 function startConnectionHealthMonitor() {
 	if (connectionHealthTimer) clearInterval(connectionHealthTimer);
-	
+
 	connectionHealthTimer = setInterval(() => {
 		const timeSinceLastData = Date.now() - lastDataReceived;
 		const maxStaleTime = 5 * 60 * 1000; // 5 minutes
-		
+		const dashboardStaleTime = 2 * 60 * 1000; // 2 minutes
+
+		// Check if dashboard appears stuck (receiving data but not updating)
+		if (timeSinceLastData < dashboardStaleTime && socket.connected && initialDataReceived) {
+			// Force a dashboard refresh if we're receiving data but UI might be stuck
+			console.log(`[DASHBOARD HEALTH] Forcing dashboard refresh to prevent stale UI`);
+			renderDashboard(clientState);
+		}
+
 		if (timeSinceLastData > maxStaleTime && socket.connected) {
 			console.warn(`[CONNECTION HEALTH] No data received for ${Math.round(timeSinceLastData / 1000)}s, forcing reconnection`);
 			showToast('Connection appears stale, reconnecting...', 'warning', 3000);
@@ -215,6 +224,12 @@ function startConnectionHealthMonitor() {
  */
 function renderDashboard(state) {
 	if (!initialDataReceived || !chartsInitialized || !state) return;
+
+	// Add debug logging for SOC updates
+	if (state.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
+		console.log(`[RENDER DEBUG] Rendering dashboard with SOC: ${state[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]}%`);
+	}
+
 	try {
 		const flowBoardData = {
 			pv: [],
@@ -258,9 +273,9 @@ function renderDashboard(state) {
 			pluginConnectionStatus: state[SDK.CORE_PLUGIN_CONNECTION_STATUS]
 		};
 		const batterySoc = state[SDK.BATTERY_STATE_OF_CHARGE_PERCENT] ?? 0;
-		
 
-		
+
+
 		flowBoardData.battery = {
 			power: state[SDK.BATTERY_POWER_WATTS] ?? 0,
 			soc: batterySoc,
@@ -272,6 +287,13 @@ function renderDashboard(state) {
 			runtimeTextDisplay: state.display_battery_time_remaining,
 			bmsPluginConnectionStatus: state[SDK.BMS_PLUGIN_CONNECTION_STATUS_KEY_PATTERN.replace('{instance_id}', 'BMS_Seplos_v2')]
 		};
+
+		// Debug log the battery data being passed to flow board
+		console.log(`[RENDER DEBUG] Battery data for flow board:`, {
+			power: flowBoardData.battery.power,
+			soc: flowBoardData.battery.soc,
+			volts: flowBoardData.battery.volts
+		});
 		const pvDaily = state[SDK.ENERGY_PV_DAILY_KWH] ?? 0,
 			battCharge = state[SDK.ENERGY_BATTERY_DAILY_CHARGE_KWH] ?? 0,
 			battDischarge = state[SDK.ENERGY_BATTERY_DAILY_DISCHARGE_KWH] ?? 0,
@@ -483,20 +505,20 @@ socket.on('full_update', async (data) => {
 
 	await appReadyPromise;
 
-    if (clientState[SDK.BMS_CELL_COUNT] > 0) {
-        if (!bmsDataAvailable) {
-            bmsDataAvailable = true;
-            const bmsTabButton = document.getElementById('bmsViewTab');
-            if (bmsTabButton) {
-                bmsTabButton.style.display = 'inline-flex';
-                bmsTabButton.click(); // Switch to the BMS tab
-            }
-        }
-    } else {
-        const historyTabButton = document.querySelector('#tabbed-card-section .tab-link[data-tab="history-tab"]');
-        if (historyTabButton) historyTabButton.click();
-    }
-	
+	if (clientState[SDK.BMS_CELL_COUNT] > 0) {
+		if (!bmsDataAvailable) {
+			bmsDataAvailable = true;
+			const bmsTabButton = document.getElementById('bmsViewTab');
+			if (bmsTabButton) {
+				bmsTabButton.style.display = 'inline-flex';
+				bmsTabButton.click(); // Switch to the BMS tab
+			}
+		}
+	} else {
+		const historyTabButton = document.querySelector('#tabbed-card-section .tab-link[data-tab="history-tab"]');
+		if (historyTabButton) historyTabButton.click();
+	}
+
 	socket.emit('request_history', {
 		days: 7 // Request 7 days for panning
 	});
@@ -505,23 +527,28 @@ socket.on('full_update', async (data) => {
 	if (histSel) {
 		handleHistoryPeriodChange(histSel.value, socket);
 	}
-    const hourlyDateSelect = document.getElementById('hourlyDateSelect');
-    if (hourlyDateSelect) {
-        socket.emit('request_hourly_summary', { date: hourlyDateSelect.value });
-    }
+	const hourlyDateSelect = document.getElementById('hourlyDateSelect');
+	if (hourlyDateSelect) {
+		socket.emit('request_hourly_summary', { date: hourlyDateSelect.value });
+	}
 });
 
 /** Handles smaller, periodic data updates from the server. */
 socket.on('update', (data) => {
 	if (disconnectTimer) clearTimeout(disconnectTimer);
 	disconnectTimer = setTimeout(() => showDisconnectPopup("Connection stalled."), DISCONNECT_TIMEOUT_MS);
-	
+
 	// Log battery SOC updates for debugging
 	if (data.hasOwnProperty(SDK.BATTERY_STATE_OF_CHARGE_PERCENT)) {
 		console.log(`[UPDATE] Battery SOC: ${data[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]}%`);
 	}
-	
+
 	processAndSanitizeData(data);
+
+	// Force immediate dashboard update for critical data changes
+	if (initialDataReceived && chartsInitialized) {
+		renderDashboard(clientState);
+	}
 
 	debouncedUpdatePowerChart(powerChart, clientState);
 });
@@ -543,9 +570,9 @@ socket.on('daily_summary_data', (response) => {
 
 /** Handles hourly energy summary data for the hourly bar chart. */
 socket.on('hourly_summary_data', (response) => {
-    if (hourlyEnergyChart) {
-        updateHourlyChart(hourlyEnergyChart, response);
-    }
+	if (hourlyEnergyChart) {
+		updateHourlyChart(hourlyEnergyChart, response);
+	}
 });
 
 /** Main application entry point, triggered when the DOM is fully loaded. */
@@ -559,10 +586,10 @@ window.onload = () => {
 
 	const themeToggle = document.getElementById('themeToggle');
 
-    /**
-     * Applies a theme to the application and notifies child components (BMS iframe, charts, weather).
-     * @param {string} theme - The theme to apply ('light' or 'dark').
-     */
+	/**
+	 * Applies a theme to the application and notifies child components (BMS iframe, charts, weather).
+	 * @param {string} theme - The theme to apply ('light' or 'dark').
+	 */
 	function applyTheme(theme) {
 		const body = document.body;
 		if (theme === 'dark') {
@@ -581,18 +608,18 @@ window.onload = () => {
 
 	const savedTheme = getCookie("theme");
 	applyTheme(savedTheme ? savedTheme : 'dark');
-	
+
 	themeToggle?.addEventListener('click', () => {
 		const newTheme = document.body.classList.contains('dark') ? 'light' : 'dark';
 		applyTheme(newTheme);
 		setCookie("theme", newTheme, 365);
-        
-        if (chartsInitialized) {
-            updateChartTheme(powerChart);
-            updateChartTheme(historicalEnergyChart);
-            updateChartTheme(hourlyEnergyChart);
-        }
-        updateWeatherTheme(newTheme);
+
+		if (chartsInitialized) {
+			updateChartTheme(powerChart);
+			updateChartTheme(historicalEnergyChart);
+			updateChartTheme(hourlyEnergyChart);
+		}
+		updateWeatherTheme(newTheme);
 	});
 
 	const bmsIframe = document.getElementById('bms-iframe');
@@ -604,71 +631,71 @@ window.onload = () => {
 		});
 	}
 
-    function setupTabGroup(containerSelector) {
-        const container = document.querySelector(containerSelector);
-        if (!container) return;
+	function setupTabGroup(containerSelector) {
+		const container = document.querySelector(containerSelector);
+		if (!container) return;
 
-        const tabLinks = container.querySelectorAll('.tab-link');
-        const tabContents = container.querySelectorAll('.tab-content');
-        const controlGroups = container.querySelectorAll('.section-header-controls');
+		const tabLinks = container.querySelectorAll('.tab-link');
+		const tabContents = container.querySelectorAll('.tab-content');
+		const controlGroups = container.querySelectorAll('.section-header-controls');
 
-        const switchTab = (tabId) => {
-            tabLinks.forEach(l => l.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
-            
-            const activeLink = container.querySelector(`.tab-link[data-tab="${tabId}"]`);
-            const activeContent = container.querySelector(`#${tabId}`);
-            
-            if (activeLink) activeLink.classList.add('active');
-            if (activeContent) activeContent.classList.add('active');
+		const switchTab = (tabId) => {
+			tabLinks.forEach(l => l.classList.remove('active'));
+			tabContents.forEach(c => c.classList.remove('active'));
 
-            controlGroups.forEach(cg => { cg.style.display = 'none' });
-            if (tabId === 'history-tab') {
-                const historyControls = document.getElementById('historyControls');
-                if(historyControls) historyControls.style.display = 'flex';
-            } else if (tabId === 'power-metrics-tab') {
-                const powerControls = document.getElementById('powerMetricsControls');
-                if(powerControls) powerControls.style.display = 'flex';
-            } else if (tabId === 'hourly-tab') {
-                const hourlyControls = document.getElementById('hourlyControls');
-                if(hourlyControls) hourlyControls.style.display = 'flex';
-            }
+			const activeLink = container.querySelector(`.tab-link[data-tab="${tabId}"]`);
+			const activeContent = container.querySelector(`#${tabId}`);
 
-            setTimeout(() => {
-                if (window.Chart?.instances) {
-                    for (const id in window.Chart.instances) {
-                        if (Object.hasOwnProperty.call(window.Chart.instances, id)) {
-                            window.Chart.instances[id].resize();
-                        }
-                    }
-                }
-                if (tabId === 'weather-tab') {
-                    handleMapResize();
-                }
-            }, 50);
-        };
+			if (activeLink) activeLink.classList.add('active');
+			if (activeContent) activeContent.classList.add('active');
 
-        tabLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
-                const tabId = e.currentTarget.getAttribute('data-tab');
-                switchTab(tabId);
-            });
-        });
+			controlGroups.forEach(cg => { cg.style.display = 'none' });
+			if (tabId === 'history-tab') {
+				const historyControls = document.getElementById('historyControls');
+				if (historyControls) historyControls.style.display = 'flex';
+			} else if (tabId === 'power-metrics-tab') {
+				const powerControls = document.getElementById('powerMetricsControls');
+				if (powerControls) powerControls.style.display = 'flex';
+			} else if (tabId === 'hourly-tab') {
+				const hourlyControls = document.getElementById('hourlyControls');
+				if (hourlyControls) hourlyControls.style.display = 'flex';
+			}
 
-        const firstActive = container.querySelector('.tab-link.active');
-        if (firstActive) {
-            switchTab(firstActive.getAttribute('data-tab'));
-        }
-    }
-    
-    setupTabGroup('#top-tab-section');
-    setupTabGroup('#tabbed-card-section');
+			setTimeout(() => {
+				if (window.Chart?.instances) {
+					for (const id in window.Chart.instances) {
+						if (Object.hasOwnProperty.call(window.Chart.instances, id)) {
+							window.Chart.instances[id].resize();
+						}
+					}
+				}
+				if (tabId === 'weather-tab') {
+					handleMapResize();
+				}
+			}, 50);
+		};
 
-    // Initialize all UI components
+		tabLinks.forEach(link => {
+			link.addEventListener('click', (e) => {
+				const tabId = e.currentTarget.getAttribute('data-tab');
+				switchTab(tabId);
+			});
+		});
+
+		const firstActive = container.querySelector('.tab-link.active');
+		if (firstActive) {
+			switchTab(firstActive.getAttribute('data-tab'));
+		}
+	}
+
+	setupTabGroup('#top-tab-section');
+	setupTabGroup('#tabbed-card-section');
+
+	// Initialize all UI components
 	const charts = initializeCharts();
 	powerChart = charts.powerChart;
 	historicalEnergyChart = charts.historicalEnergyChart;
-    hourlyEnergyChart = charts.hourlyEnergyChart;
+	hourlyEnergyChart = charts.hourlyEnergyChart;
 	if (powerChart && historicalEnergyChart && hourlyEnergyChart) {
 		chartsInitialized = true;
 	}
@@ -676,12 +703,12 @@ window.onload = () => {
 	initializeFlowBoard(debounce);
 	startAnimationLoop(() => clientState);
 	masterRenderLoop();
-    initWeather();
+	initWeather();
 
-    // --- Bind Event Listeners for UI Controls ---
+	// --- Bind Event Listeners for UI Controls ---
 	const histSel = document.getElementById('historyPeriodSelect');
 	histSel?.addEventListener('change', () => handleHistoryPeriodChange(histSel.value, socket));
-	
+
 	document.getElementById('refreshPowerChartBtn')?.addEventListener('click', () => socket.emit('request_history', { days: 7 }));
 
 	document.getElementById('refreshHistoryChartBtn')?.addEventListener('click', () => {
@@ -695,22 +722,22 @@ window.onload = () => {
 		}
 	});
 
-    const hourlyDateSelect = document.getElementById('hourlyDateSelect');
-    if (hourlyDateSelect) {
-        const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const dd = String(today.getDate()).padStart(2, '0');
-        hourlyDateSelect.value = `${yyyy}-${mm}-${dd}`;
-        hourlyDateSelect.addEventListener('change', () => {
-            socket.emit('request_hourly_summary', { date: hourlyDateSelect.value });
-        });
-    }
+	const hourlyDateSelect = document.getElementById('hourlyDateSelect');
+	if (hourlyDateSelect) {
+		const today = new Date();
+		const yyyy = today.getFullYear();
+		const mm = String(today.getMonth() + 1).padStart(2, '0');
+		const dd = String(today.getDate()).padStart(2, '0');
+		hourlyDateSelect.value = `${yyyy}-${mm}-${dd}`;
+		hourlyDateSelect.addEventListener('change', () => {
+			socket.emit('request_hourly_summary', { date: hourlyDateSelect.value });
+		});
+	}
 
-    document.getElementById('refreshHourlyChartBtn')?.addEventListener('click', () => {
-        if (hourlyDateSelect) socket.emit('request_hourly_summary', { date: hourlyDateSelect.value });
-    });
-    document.getElementById('exportHourlyChartBtn')?.addEventListener('click', () => exportChartDataToCSV(hourlyEnergyChart, `hourly_summary_${hourlyDateSelect.value}`));
+	document.getElementById('refreshHourlyChartBtn')?.addEventListener('click', () => {
+		if (hourlyDateSelect) socket.emit('request_hourly_summary', { date: hourlyDateSelect.value });
+	});
+	document.getElementById('exportHourlyChartBtn')?.addEventListener('click', () => exportChartDataToCSV(hourlyEnergyChart, `hourly_summary_${hourlyDateSelect.value}`));
 
 	// Flow board refresh button functionality
 	const flowBoardRefreshBtn = document.getElementById('flowBoardRefreshBtn');
@@ -718,9 +745,17 @@ window.onload = () => {
 		flowBoardRefreshBtn.addEventListener('click', () => {
 			console.log('[MANUAL] Flow board refresh requested by user');
 			flowBoardRefreshBtn.classList.add('spinning');
+
+			// Force immediate dashboard re-render with current data
+			if (initialDataReceived && chartsInitialized) {
+				console.log('[MANUAL] Forcing immediate dashboard refresh with current data');
+				renderDashboard(clientState);
+			}
+
+			// Also request fresh data from server
 			socket.emit('request_full_update');
 			showToast('Refreshing flow board data...', 'info', 2000);
-			
+
 			// Remove spinning animation after 2 seconds
 			setTimeout(() => {
 				flowBoardRefreshBtn.classList.remove('spinning');
@@ -735,7 +770,7 @@ window.onload = () => {
 			console.log('[MANUAL] Manual reconnection requested by user');
 			manualReconnectBtn.classList.add('spinning');
 			showToast('Forcing reconnection...', 'info', 3000);
-			
+
 			// Force disconnect and reconnect
 			if (socket.connected) {
 				socket.disconnect();
