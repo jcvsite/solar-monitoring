@@ -33,6 +33,9 @@ class DatabaseService:
         self.history_max_hours = self.app_state.config.getint('DATABASE', 'HISTORY_MAX_AGE_HOURS', fallback=168)
         self.conn_params = {"timeout": 30, "check_same_thread": False}
         self._thread = None
+        # Periodic verification tracking
+        self._last_verification_date = None
+        self._verification_times = [(1, 0), (23, 0)]  # 1:00 AM and 11:00 PM
         self._init_db()
 
     def start(self):
@@ -112,6 +115,9 @@ class DatabaseService:
 
                 self._store_power_data(data_packet)
                 self._update_daily_summary(data_packet)
+                
+                # Check if it's time for periodic verification
+                self._check_periodic_verification()
 
             except Exception as e:
                 logger.error(f"Database service loop error: {e}", exc_info=True)
@@ -377,6 +383,194 @@ class DatabaseService:
                     
         except Exception as e:
             logger.error(f"Error during yesterday's summary backfill: {e}", exc_info=True)
+
+    def _check_periodic_verification(self):
+        """
+        Checks if it's time to run periodic verification of yesterday's data.
+        
+        Runs twice daily at 1:00 AM and 11:00 PM to verify that our database
+        matches the inverter's final totals for yesterday.
+        """
+        try:
+            now = datetime.now(self.app_state.local_tzinfo)
+            today_str = now.strftime('%Y-%m-%d')
+            current_hour = now.hour
+            current_minute = now.minute
+            
+            # Check if we've already verified today
+            if self._last_verification_date == today_str:
+                return
+            
+            # Check if current time matches any of our verification times (within 5 minutes)
+            should_verify = False
+            for verify_hour, verify_minute in self._verification_times:
+                if (current_hour == verify_hour and 
+                    abs(current_minute - verify_minute) <= 5):
+                    should_verify = True
+                    break
+            
+            if should_verify:
+                logger.info(f"Periodic verification triggered at {now.strftime('%H:%M')}. Verifying yesterday's data.")
+                self._verify_yesterday_data()
+                self._last_verification_date = today_str
+                
+        except Exception as e:
+            logger.error(f"Error during periodic verification check: {e}", exc_info=True)
+
+    def _verify_yesterday_data(self):
+        """
+        Verifies that our database's yesterday data matches the inverter's yesterday data.
+        
+        This runs periodically (twice daily) to catch cases where:
+        - Bad data was written during live operation
+        - The inverter had communication issues during the day
+        - Daily totals were reset or corrupted during live operation
+        
+        Uses the same protection logic as backfill but may be more lenient since
+        this is "official" post-midnight data from the inverter.
+        """
+        try:
+            yesterday = datetime.now(self.app_state.local_tzinfo) - timedelta(days=1)
+            yesterday_str = yesterday.strftime('%Y-%m-%d')
+            
+            # Query database for yesterday's existing summary data
+            existing_summary = None
+            with self.app_state.db_lock, sqlite3.connect(self.db_file, **self.conn_params) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM daily_summary WHERE date = ?", (yesterday_str,))
+                existing_row = cursor.fetchone()
+                if existing_row:
+                    existing_summary = dict(existing_row)
+            
+            if not existing_summary:
+                logger.info(f"VERIFICATION: No data found for {yesterday_str} in database. Skipping verification.")
+                return
+            
+            # Extract existing values for logging
+            existing_pv = existing_summary.get('pv_yield_kwh', 0.0) or 0.0
+            existing_grid_import = existing_summary.get('grid_import_kwh', 0.0) or 0.0
+            existing_load = existing_summary.get('load_energy_kwh', 0.0) or 0.0
+            existing_batt_charge = existing_summary.get('battery_charge_kwh', 0.0) or 0.0
+            existing_batt_discharge = existing_summary.get('battery_discharge_kwh', 0.0) or 0.0
+            existing_grid_export = existing_summary.get('grid_export_kwh', 0.0) or 0.0
+            existing_total = existing_pv + existing_grid_import + existing_load
+            
+            logger.info(f"VERIFICATION: Database values for {yesterday_str}: "
+                       f"PV={existing_pv:.2f}kWh, Grid_Import={existing_grid_import:.2f}kWh, "
+                       f"Load={existing_load:.2f}kWh, Total={existing_total:.2f}kWh")
+            
+            # Query connected plugins for yesterday's data
+            verification_performed = False
+            for name, plugin in self.app_state.active_plugin_instances.items():
+                if plugin.is_connected and hasattr(plugin, 'read_yesterday_energy_summary'):
+                    logger.info(f"VERIFICATION: Querying plugin '{name}' for yesterday's data...")
+                    
+                    try:
+                        summary_data = plugin.read_yesterday_energy_summary()
+                        if summary_data and isinstance(summary_data, dict):
+                            # Extract inverter values for comparison
+                            inverter_pv = summary_data.get(StandardDataKeys.ENERGY_PV_DAILY_KWH, 0.0) or 0.0
+                            inverter_grid_import = summary_data.get(StandardDataKeys.ENERGY_GRID_DAILY_IMPORT_KWH, 0.0) or 0.0
+                            inverter_load = summary_data.get(StandardDataKeys.ENERGY_LOAD_DAILY_KWH, 0.0) or 0.0
+                            inverter_batt_charge = summary_data.get(StandardDataKeys.ENERGY_BATTERY_DAILY_CHARGE_KWH, 0.0) or 0.0
+                            inverter_batt_discharge = summary_data.get(StandardDataKeys.ENERGY_BATTERY_DAILY_DISCHARGE_KWH, 0.0) or 0.0
+                            inverter_grid_export = summary_data.get(StandardDataKeys.ENERGY_GRID_DAILY_EXPORT_KWH, 0.0) or 0.0
+                            inverter_total = inverter_pv + inverter_grid_import + inverter_load
+                            
+                            logger.info(f"VERIFICATION: Inverter values for {yesterday_str}: "
+                                      f"PV={inverter_pv:.2f}kWh, Grid_Import={inverter_grid_import:.2f}kWh, "
+                                      f"Load={inverter_load:.2f}kWh, Total={inverter_total:.2f}kWh")
+                            
+                            # Compare values - check if they're significantly different
+                            differences = {
+                                'pv': abs(existing_pv - inverter_pv),
+                                'grid_import': abs(existing_grid_import - inverter_grid_import),
+                                'load': abs(existing_load - inverter_load),
+                                'batt_charge': abs(existing_batt_charge - inverter_batt_charge),
+                                'batt_discharge': abs(existing_batt_discharge - inverter_batt_discharge),
+                                'grid_export': abs(existing_grid_export - inverter_grid_export)
+                            }
+                            
+                            # Define threshold for "significant difference" (0.5 kWh)
+                            SIGNIFICANT_DIFF_THRESHOLD = 0.5
+                            significant_diffs = {k: v for k, v in differences.items() if v >= SIGNIFICANT_DIFF_THRESHOLD}
+                            
+                            if significant_diffs:
+                                logger.warning(f"VERIFICATION: Significant differences found for {yesterday_str}: {significant_diffs}")
+                                
+                                # Use modified protection logic for verification
+                                should_update = self._should_update_from_verification(existing_summary, summary_data, existing_total, inverter_total)
+                                
+                                if should_update:
+                                    logger.info(f"VERIFICATION UPDATE: Correcting database values for {yesterday_str}. "
+                                              f"Before: PV={existing_pv:.2f}, Grid_Import={existing_grid_import:.2f}, "
+                                              f"Load={existing_load:.2f}, Batt_Charge={existing_batt_charge:.2f}, "
+                                              f"Batt_Discharge={existing_batt_discharge:.2f}, Grid_Export={existing_grid_export:.2f}kWh | "
+                                              f"After: PV={inverter_pv:.2f}, Grid_Import={inverter_grid_import:.2f}, "
+                                              f"Load={inverter_load:.2f}, Batt_Charge={inverter_batt_charge:.2f}, "
+                                              f"Batt_Discharge={inverter_batt_discharge:.2f}, Grid_Export={inverter_grid_export:.2f}kWh")
+                                    
+                                    self._store_daily_summary(yesterday_str, summary_data)
+                                else:
+                                    logger.info(f"VERIFICATION SKIPPED: Protection logic prevented update for {yesterday_str}")
+                            else:
+                                logger.info(f"VERIFICATION OK: Database matches inverter for {yesterday_str} (max diff: {max(differences.values()):.3f}kWh)")
+                            
+                            verification_performed = True
+                            break  # Only verify against first available plugin
+                            
+                        else:
+                            logger.warning(f"VERIFICATION: Plugin '{name}' returned invalid data")
+                            
+                    except Exception as e:
+                        logger.error(f"VERIFICATION: Error querying plugin '{name}': {e}")
+                        
+                else:
+                    logger.debug(f"VERIFICATION: Skipping plugin '{name}' (not connected or no yesterday support)")
+            
+            if not verification_performed:
+                logger.info(f"VERIFICATION: No suitable plugins available for verification of {yesterday_str}")
+                
+        except Exception as e:
+            logger.error(f"Error during yesterday's data verification: {e}", exc_info=True)
+
+    def _should_update_from_verification(self, existing_summary: Dict[str, Any], inverter_data: Dict[str, Any], 
+                                       existing_total: float, inverter_total: float) -> bool:
+        """
+        Determines if database should be updated based on verification data.
+        
+        This is more lenient than backfill protection since this is "official" 
+        post-midnight data from the inverter.
+        
+        Args:
+            existing_summary: Current database values
+            inverter_data: Fresh data from inverter
+            existing_total: Total energy from existing data
+            inverter_total: Total energy from inverter data
+            
+        Returns:
+            bool: True if database should be updated
+        """
+        # If existing data is very low (< 1 kWh total), always update with inverter data
+        if existing_total < 1.0:
+            return True
+            
+        # If inverter data is very low (< 0.5 kWh total), be cautious
+        if inverter_total < 0.5:
+            # Only update if existing data is also very low
+            return existing_total < 1.0
+            
+        # If inverter total is significantly higher than existing, likely good data
+        if inverter_total > existing_total * 1.5:
+            return True
+            
+        # If inverter total is much lower than existing, be cautious
+        if inverter_total < existing_total * 0.3:
+            return False
+            
+        # For moderate differences, update (this is official post-midnight data)
+        return True
 
     def _update_daily_summary(self, data: dict):
         """
