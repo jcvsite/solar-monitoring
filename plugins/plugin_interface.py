@@ -6,6 +6,64 @@ import logging # Use standard logging
 if TYPE_CHECKING:
     from core.app_state import AppState
 
+def parse_config_int(config_dict: Dict[str, Any], key: str, default: int) -> int:
+    """
+    Parse an integer configuration value, handling comments and whitespace.
+    
+    Args:
+        config_dict: The configuration dictionary
+        key: The configuration key to parse
+        default: Default value if key is not found
+        
+    Returns:
+        The parsed integer value
+        
+    Example:
+        # Handles values like "115200 ; comment" or "115200"
+        baud_rate = parse_config_int(config, "baud_rate", 9600)
+    """
+    value_str = str(config_dict.get(key, default))
+    # Strip comments (everything after ';') and whitespace
+    clean_value = value_str.split(';')[0].strip()
+    return int(clean_value)
+
+def parse_config_float(config_dict: Dict[str, Any], key: str, default: float) -> float:
+    """
+    Parse a float configuration value, handling comments and whitespace.
+    
+    Args:
+        config_dict: The configuration dictionary
+        key: The configuration key to parse
+        default: Default value if key is not found
+        
+    Returns:
+        The parsed float value
+    """
+    value_str = str(config_dict.get(key, default))
+    # Strip comments (everything after ';') and whitespace
+    clean_value = value_str.split(';')[0].strip()
+    return float(clean_value)
+
+def parse_config_str(config_dict: Dict[str, Any], key: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Parse a string configuration value, handling comments and whitespace.
+    
+    Args:
+        config_dict: The configuration dictionary
+        key: The configuration key to parse
+        default: Default value if key is not found
+        
+    Returns:
+        The parsed string value, or None if not found and no default
+    """
+    value = config_dict.get(key, default)
+    if value is None:
+        return None
+    value_str = str(value)
+    # Strip comments (everything after ';') and whitespace
+    clean_value = value_str.split(';')[0].strip()
+    return clean_value if clean_value else None
+
 # --- Standardized Data Keys ---
 class StandardDataKeys:
     """
