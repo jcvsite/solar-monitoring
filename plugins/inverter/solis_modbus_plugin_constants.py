@@ -281,7 +281,7 @@ BATTERY_MODEL_CODES: Dict[int, str] = {
     0: "Unknown / Not Set", 1: "Pylontech", 2: "BYD", 3: "LG RESU", 4: "Weco",
     5: "Soluna", 6: "Dyness", 7: "Pytes", 8: "Alpha ESS", 9: "Discover AES",
     10: "Huawei LUNA", 11: "Turbo Energy", 12: "Solax", 13: "FoxESS", 14: "RoyPow",
-    15: "Uhome", 16: "Sunwoda"
+    15: "Uhome", 16: "Sunwoda", 99: "Battery BMS"
 }
 MODBUS_EXCEPTION_CODES: Dict[int, str] = {
     1: "Illegal Function", 2: "Illegal Data Address", 3: "Illegal Data Value",

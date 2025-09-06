@@ -284,7 +284,7 @@ class Eg4ModbusPlugin(DevicePlugin):
             return None
         all_regs = {}
         for start, count in chunks:
-            result = read_method(start, count, slave=self.slave_address)
+            result = read_method(start, count, unit=self.slave_address)
             if result.isError():
                 self.logger.warning(f"EG4 Plugin '{self.instance_name}': Modbus error reading chunk starting at {start}: {result}")
                 continue

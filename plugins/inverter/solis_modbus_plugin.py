@@ -119,6 +119,37 @@ class SolisModbusPlugin(DevicePlugin):
             logger_instance.error(f"SolisPlugin: Decode Error for '{key_name_for_log}' ({reg_type}) with {registers}: {e}", exc_info=False)
             return ERROR_DECODE, unit
 
+    def _safe_modbus_read(self, read_func, start_addr: int, count: int):
+        """
+        Safely call modbus read functions with different parameter formats for version compatibility.
+        
+        Args:
+            read_func: The modbus read function (e.g., client.read_input_registers)
+            start_addr: Starting register address
+            count: Number of registers to read
+            
+        Returns:
+            The result from the modbus read function
+        """
+        # For pymodbus 3.6.2, try the correct API format
+        try:
+            # Try with slave parameter (this should work for 3.6.2)
+            return read_func(start_addr, count, slave=self.slave_address)
+        except TypeError:
+            try:
+                # Try with unit parameter
+                return read_func(start_addr, count, unit=self.slave_address)
+            except TypeError:
+                try:
+                    # Try keyword arguments
+                    return read_func(address=start_addr, count=count, slave=self.slave_address)
+                except TypeError:
+                    try:
+                        return read_func(address=start_addr, count=count, unit=self.slave_address)
+                    except TypeError:
+                        # Try without slave/unit (if set on client)
+                        return read_func(start_addr, count)
+
     @staticmethod
     def _plugin_get_register_count(reg_type: str, logger_instance: logging.Logger) -> int:
         """
@@ -268,6 +299,14 @@ class SolisModbusPlugin(DevicePlugin):
             else: # TCP
                 self.client = ModbusTcpClient(host=self.tcp_host, port=self.tcp_port, timeout=self.modbus_timeout_seconds)
             
+            # Set slave address on client if supported (try different attributes)
+            if hasattr(self.client, 'slave'):
+                self.client.slave = self.slave_address
+            elif hasattr(self.client, 'unit_id'):
+                self.client.unit_id = self.slave_address
+            elif hasattr(self.client, 'slave_id'):
+                self.client.slave_id = self.slave_address
+            
             if self.client.connect():
                 self._is_connected_flag = True
                 self.logger.info(f"SolisPlugin '{self.instance_name}': Successfully connected.")
@@ -366,7 +405,7 @@ class SolisModbusPlugin(DevicePlugin):
                     read_func_attr = 'read_holding_registers' if reg_func_type == 'holding' else 'read_input_registers'
                     read_func = getattr(self.client, read_func_attr)
 
-                    result = read_func(address=group["start"], count=group["count"], slave=self.slave_address)
+                    result = self._safe_modbus_read(read_func, group["start"], group["count"])
                     
                     if isinstance(result, ExceptionResponse):
                         exc_msg = MODBUS_EXCEPTION_CODES.get(result.exception_code, f'Unknown Modbus Exc ({result.exception_code})')

@@ -169,6 +169,10 @@ class SrneModbusPlugin(DevicePlugin):
             else:  # TCP
                 self.client = ModbusTcpClient(host=self.tcp_host, port=self.tcp_port, timeout=self.modbus_timeout_seconds)
             
+            # Set slave address on client if supported
+            if hasattr(self.client, 'slave'):
+                self.client.slave = self.slave_address
+                
             if self.client.connect():
                 self._is_connected_flag = True
                 self.logger.info(f"SRNE Plugin '{self.instance_name}': Successfully connected.")
@@ -219,7 +223,14 @@ class SrneModbusPlugin(DevicePlugin):
             
             # Read Product Model (ASCII)
             model_info = SRNE_STATIC_REGISTERS["product_model"]
-            result = self.client.read_holding_registers(model_info["addr"], model_info["len"], slave=self.slave_address)
+            # Try different parameter formats for pymodbus version compatibility
+            try:
+                result = self.client.read_holding_registers(model_info["addr"], model_info["len"], unit=self.slave_address)
+            except TypeError:
+                try:
+                    result = self.client.read_holding_registers(model_info["addr"], model_info["len"], slave=self.slave_address)
+                except TypeError:
+                    result = self.client.read_holding_registers(model_info["addr"], model_info["len"])
             if not result.isError():
                 static_data[StandardDataKeys.STATIC_INVERTER_MODEL_NAME] = self._decode_string_from_registers(result.registers)
             else:
@@ -227,7 +238,14 @@ class SrneModbusPlugin(DevicePlugin):
 
             # Read Versions
             sw_info = SRNE_STATIC_REGISTERS["software_version"]
-            result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"], slave=self.slave_address)
+            # Try different parameter formats for pymodbus version compatibility
+            try:
+                result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"], unit=self.slave_address)
+            except TypeError:
+                try:
+                    result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"], slave=self.slave_address)
+                except TypeError:
+                    result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"])
             if not result.isError():
                 # V03.02.01 is stored as 0003 0201
                 v_major = result.registers[0] >> 8
@@ -267,7 +285,14 @@ class SrneModbusPlugin(DevicePlugin):
             # Read all dynamic registers in one block (from 0x0100 to 0x0122)
             start_addr = 0x0100
             count = (0x0122 - 0x0100) + 1
-            result = self.client.read_holding_registers(start_addr, count, slave=self.slave_address)
+            # Try different parameter formats for pymodbus version compatibility
+            try:
+                result = self.client.read_holding_registers(start_addr, count, unit=self.slave_address)
+            except TypeError:
+                try:
+                    result = self.client.read_holding_registers(start_addr, count, slave=self.slave_address)
+                except TypeError:
+                    result = self.client.read_holding_registers(start_addr, count)
 
             if result.isError() or isinstance(result, ExceptionResponse):
                 raise ConnectionException(f"Modbus error reading dynamic registers: {result}")

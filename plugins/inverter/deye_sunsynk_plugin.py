@@ -388,7 +388,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
                     if not self.client or not self._is_client_connected():
                         raise ModbusIOException("Client invalid or disconnected before retry")
 
-                    read_result = self.client.read_holding_registers(address=group["start"], count=group["count"], slave=self.slave_address)
+                    read_result = self.client.read_holding_registers(address=group["start"], count=group["count"], unit=self.slave_address)
 
                     if isinstance(read_result, ExceptionResponse):
                         exc_msg = MODBUS_EXCEPTION_CODES.get(read_result.exception_code, f'Unknown Modbus Exc ({read_result.exception_code})')
