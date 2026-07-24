@@ -12,6 +12,8 @@ Instructions:
 Optional: You can override the config instance name by setting the environment variable:
    set BMS_INSTANCE_NAME=BMS_Seplos_v3
    python bms_stand_alone_test_seplos_v3.py
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 import logging
 import time

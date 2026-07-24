@@ -1,4 +1,20 @@
 # services/tuya_service.py
+"""
+Tuya Smart Plug Service
+
+Optional local Tuya plug control driven by inverter temperature (or related
+thresholds) for fan/automation use cases in the Solar Monitoring Framework.
+
+Features:
+- Local-key based device control (no cloud round-trip required when local)
+- On/off threshold hysteresis from config.ini
+- Shared Tuya state constants for UI/MQTT visibility
+- Background-safe updates from the data processor path
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import logging
 import threading
 import time

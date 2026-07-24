@@ -1,0 +1,6 @@
+﻿/* Local font stack fallback (vendored offline dashboard) */
+@import url('/static/vendor/fonts-fallback.css');
+
+body, button, input, select, textarea {
+  font-family: Poppins, Carlito, "Segoe UI", Tahoma, sans-serif;
+}

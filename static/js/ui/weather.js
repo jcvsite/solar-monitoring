@@ -4,7 +4,10 @@
 let map = null,
 	animationTimer = null,
 	radarLayers = [],
-	currentAnimationRequest = 0;
+	currentAnimationRequest = 0,
+	pendingLocation = null,
+	weatherStarted = false,
+	updateIntervalId = null;
 
 // --- Helper Functions ---
 /**
@@ -38,6 +41,40 @@ function getWeatherIconId(code, isDay) {
 	return 'cloudy';
 }
 
+/**
+ * Scale weather typography/icons from available card size (normal + kiosk).
+ */
+function fitWeatherLayout() {
+	const card = document.querySelector('.weather-card');
+	if (!card) return;
+	const w = card.clientWidth || 1;
+	const h = card.clientHeight || 1;
+	// Reference: ~520×300 panel → scale 1; grow on kiosk / large panels
+	const scale = Math.max(0.85, Math.min(1.35, Math.min(w / 560, h / 320)));
+	card.style.setProperty('--weather-scale', scale.toFixed(3));
+}
+
+let weatherResizeObserver = null;
+function ensureWeatherLayoutObserver() {
+	const card = document.querySelector('.weather-card');
+	if (!card || typeof ResizeObserver === 'undefined') {
+		fitWeatherLayout();
+		return;
+	}
+	if (!weatherResizeObserver) {
+		let t = null;
+		weatherResizeObserver = new ResizeObserver(() => {
+			clearTimeout(t);
+			t = setTimeout(() => {
+				fitWeatherLayout();
+				handleMapResize();
+			}, 40);
+		});
+	}
+	weatherResizeObserver.observe(card);
+	fitWeatherLayout();
+}
+
 // --- Core Application Logic ---
 /**
  * Updates the UI of the weather card with the latest data.
@@ -57,7 +94,12 @@ function updateWeatherCard(data, locationName) {
 	document.getElementById('datetime').textContent = `${localDate}, ${localTime}`;
 	document.getElementById('location').textContent = locationName;
 	document.getElementById('temperature').textContent = `${Math.round(current.temperature_2m)}${tempUnit}`;
-	document.getElementById('main-weather-icon').setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', `#${getWeatherIconId(current.weather_code, current.is_day)}`);
+	const mainIconId = getWeatherIconId(current.weather_code, current.is_day);
+	const mainIconUse = document.getElementById('main-weather-icon');
+	if (mainIconUse) {
+		mainIconUse.setAttribute('href', `#${mainIconId}`);
+		mainIconUse.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', `#${mainIconId}`);
+	}
 	document.getElementById('weather-type').textContent = getWeatherDescription(current.weather_code);
 	document.getElementById('precipitation').textContent = `${current.precipitation_probability} %`;
 	document.getElementById('cloud-cover').textContent = `${current.cloud_cover} %`;
@@ -74,9 +116,10 @@ function updateWeatherCard(data, locationName) {
 		const dayName = new Date(daily.time[i]).toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
 		const iconId = getWeatherIconId(daily.weather_code[i], 1);
 		const temp = Math.round(daily.temperature_2m_max[i]);
-		day.innerHTML = `<div class="day-name">${dayName}</div><svg class="icon"><use xlink:href="#${iconId}"></use></svg><div class="temp">${temp}${tempUnit}</div>`;
+		day.innerHTML = `<div class="day-name">${dayName}</div><svg class="icon" viewBox="0 0 64 64" aria-hidden="true"><use href="#${iconId}" xlink:href="#${iconId}"></use></svg><div class="temp">${temp}${tempUnit}</div>`;
 		forecastContainer.appendChild(day);
 	}
+	fitWeatherLayout();
 }
 
 /**
@@ -188,12 +231,18 @@ async function loadWeather(locationConfig) {
 	};
 
 	updateAll();
-	setInterval(updateAll, window.WEATHER_CONFIG.update_interval_mins * 60 * 1000);
+	if (updateIntervalId) clearInterval(updateIntervalId);
+	updateIntervalId = setInterval(updateAll, window.WEATHER_CONFIG.update_interval_mins * 60 * 1000);
+	// Force size after paint — Leaflet needs a visible container
+	setTimeout(() => {
+		ensureWeatherLayoutObserver();
+		handleMapResize();
+	}, 100);
 }
 
 /**
- * Initializes the weather module. Checks if it's enabled in the config,
- * determines the location (auto or default), and kicks off the loading process.
+ * Initializes the weather module. Shows the Weather tab when enabled.
+ * Map/data load is deferred until ensureWeatherStarted() (first tab open).
  */
 export function initWeather() {
     const config = window.WEATHER_CONFIG;
@@ -201,9 +250,16 @@ export function initWeather() {
         console.log("Weather widget is disabled in config.");
         return;
     }
-    document.getElementById('weatherViewTab').style.display = 'inline-flex';
-    
-    const locationToLoad = {
+    const tab = document.getElementById('weatherViewTab');
+    if (tab) {
+        tab.style.display = 'inline-flex';
+        // Re-apply user panel prefs (may hide weather)
+        try {
+            document.dispatchEvent(new CustomEvent('solar-dash-prefs-apply'));
+        } catch (_) { /* ignore */ }
+    }
+
+    pendingLocation = {
         name: "Default Location",
         lat: config.default_lat,
         lon: config.default_lon
@@ -213,15 +269,37 @@ export function initWeather() {
 		navigator.geolocation.getCurrentPosition(
 			(position) => {
 				const { latitude, longitude } = position.coords;
-				loadWeather({ name: "Current Location", lat: latitude, lon: longitude });
+				pendingLocation = { name: "Current Location", lat: latitude, lon: longitude };
+				if (weatherStarted) {
+					loadWeather(pendingLocation);
+				}
 			},
 			(error) => {
 				console.warn(`Geolocation error (${error.code}): ${error.message}. Using default location.`);
-				loadWeather(locationToLoad);
 			}
 		);
+	}
+}
+
+/**
+ * Start map + forecast once the Weather tab is visible. Safe to call repeatedly.
+ */
+export function ensureWeatherStarted() {
+	const config = window.WEATHER_CONFIG;
+	if (!config || !config.enabled) return;
+	if (!pendingLocation) {
+		pendingLocation = {
+			name: "Default Location",
+			lat: config.default_lat,
+			lon: config.default_lon
+		};
+	}
+	if (!weatherStarted) {
+		weatherStarted = true;
+		loadWeather(pendingLocation);
 	} else {
-		loadWeather(locationToLoad);
+		ensureWeatherLayoutObserver();
+		handleMapResize();
 	}
 }
 
@@ -250,10 +328,15 @@ export function updateWeatherTheme(theme) {
 }
 
 /**
- * Forces the map to recalculate its size, which is useful when its container becomes visible or resizes.
+ * Forces the map to recalculate its size after the weather tab becomes visible.
  */
 export function handleMapResize() {
+    fitWeatherLayout();
     if (map) {
-        map.invalidateSize();
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                map.invalidateSize();
+            });
+        });
     }
 }

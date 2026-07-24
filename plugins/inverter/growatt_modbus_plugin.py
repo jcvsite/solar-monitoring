@@ -63,6 +63,14 @@ class ConnectionType(str, Enum):
     SERIAL = "serial"
 
 class GrowattModbusPlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "growatt_modbus",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["MIX", "SPH", "MIC"],
+        "status": "testing",
+        "api_version": 1,
+    }
     """
     A plugin to interact with Growatt inverters via Modbus TCP or RTU.
 
@@ -111,9 +119,20 @@ class GrowattModbusPlugin(DevicePlugin):
         
         # Modbus communication parameters
         self.modbus_timeout_seconds = int(self.plugin_config.get("modbus_timeout_seconds", 10))
+        # has_storage: true|false|auto — auto probes block 1000+ once per session
+        raw_storage = str(self.plugin_config.get("has_storage", "auto")).split(";")[0].strip().lower()
+        if raw_storage in ("0", "false", "no", "off"):
+            self._has_storage_enabled = False
+            self._has_storage_probed = True
+        elif raw_storage in ("1", "true", "yes", "on"):
+            self._has_storage_enabled = True
+            self._has_storage_probed = True
+        else:
+            self._has_storage_enabled = True  # try until proven otherwise
+            self._has_storage_probed = False
         
         target_info = f"{self.tcp_host}:{self.tcp_port}" if self.connection_type == ConnectionType.TCP else f"{self.serial_port}:{self.baud_rate}"
-        self.logger.info(f"Growatt Plugin '{self.instance_name}': Initialized. Conn: {self.connection_type.value}, Target: {target_info}, SlaveID: {self.slave_address}.")
+        self.logger.info(f"Growatt Plugin '{self.instance_name}': Initialized. Conn: {self.connection_type.value}, Target: {target_info}, SlaveID: {self.slave_address}, has_storage={raw_storage}.")
 
     @property
     def name(self) -> str:
@@ -247,7 +266,7 @@ class GrowattModbusPlugin(DevicePlugin):
         """
         if not self.is_connected:
             self.logger.error(f"Growatt Plugin '{self.instance_name}': Cannot read dynamic data, not connected.")
-            return {}
+            return None
 
         try:
             all_registers = {}
@@ -256,10 +275,36 @@ class GrowattModbusPlugin(DevicePlugin):
             if res1.isError(): raise ConnectionException(f"Modbus error reading input block 1: {res1}")
             for i, reg in enumerate(res1.registers): all_registers[i] = reg
             
-            # Read second block for storage systems (1000-1124)
-            res2 = self.client.read_input_registers(1000, 125, slave=self.slave_address)
-            if res2.isError(): raise ConnectionException(f"Modbus error reading input block 2: {res2}")
-            for i, reg in enumerate(res2.registers): all_registers[1000 + i] = reg
+            # Storage/hybrid block is optional — grid-tie-only inverters often reject 1000+.
+            if self._has_storage_enabled:
+                res2 = self.client.read_input_registers(1000, 125, slave=self.slave_address)
+                if res2.isError():
+                    err_txt = str(res2)
+                    illegal = "Illegal" in err_txt or "0x02" in err_txt or "illegal" in err_txt.lower()
+                    if not self._has_storage_probed and illegal:
+                        self._has_storage_enabled = False
+                        self._has_storage_probed = True
+                        self.logger.info(
+                            f"Growatt Plugin '{self.instance_name}': has_storage=auto — "
+                            f"block 1000+ illegal; disabling storage registers for this session."
+                        )
+                    else:
+                        self.logger.warning(
+                            f"Growatt Plugin '{self.instance_name}': storage register block 1000+ failed "
+                            f"({res2}); continuing with base registers. Set has_storage=false if expected."
+                        )
+                        if not self._has_storage_probed:
+                            self._has_storage_probed = True
+                else:
+                    first_ok = not self._has_storage_probed
+                    self._has_storage_probed = True
+                    self._has_storage_enabled = True
+                    for i, reg in enumerate(res2.registers):
+                        all_registers[1000 + i] = reg
+                    if first_ok:
+                        self.logger.info(
+                            f"Growatt Plugin '{self.instance_name}': storage register block 1000+ OK."
+                        )
 
             decoded = self._decode_registers_from_dict(all_registers, GROWATT_INPUT_REGISTERS)
             return self._standardize_operational_data(decoded)
@@ -268,7 +313,7 @@ class GrowattModbusPlugin(DevicePlugin):
             self.last_error_message = f"Communication error: {e}"
             self.logger.error(f"Growatt Plugin '{self.instance_name}': Failed to read dynamic data: {e}")
             self.disconnect()
-            return {}
+            return None
 
     def _decode_registers(self, registers: List[int], register_map: Dict[str, Any], start_addr: int) -> Dict[str, Any]:
         """

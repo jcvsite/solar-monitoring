@@ -1,4 +1,21 @@
 # utils/helpers.py
+"""
+Shared Helper Utilities
+
+Common status constants and small helpers used across core services and plugins
+in the Solar Monitoring Framework.
+
+Features:
+- Connection/status string constants (online, error, initializing, etc.)
+- Tuya state constants for UI/MQTT
+- Value formatting helpers for dashboards
+- Script restart trigger used by watchdog paths
+- Error sentinel strings (decode/read/proc)
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import os
 import sys
 import logging
@@ -93,6 +110,52 @@ def format_time_ago(elapsed_seconds: Any) -> str:
     d = int(elapsed_seconds / 86400)
     return f"{d} day{'s' if d > 1 else ''} ago"
 
+def _restart_rate_limit_path() -> str:
+    """Return a path for tracking recent full-process restart attempts."""
+    base = os.path.dirname(os.path.abspath(sys.argv[0] if sys.argv else __file__))
+    return os.path.join(base, ".solar_monitoring_restart_state")
+
+
+def should_allow_full_restart(max_restarts: int = 5, window_seconds: int = 3600) -> bool:
+    """
+    Rate-limit full process restarts to avoid restart storms.
+
+    Returns True if a restart is allowed. Updates the on-disk counter when allowed.
+    """
+    path = _restart_rate_limit_path()
+    now = __import__("time").time()
+    timestamps = []
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        timestamps.append(float(line))
+                    except ValueError:
+                        continue
+    except OSError as e:
+        logger.warning(f"Could not read restart rate-limit file: {e}")
+
+    timestamps = [ts for ts in timestamps if (now - ts) <= window_seconds]
+    if len(timestamps) >= max_restarts:
+        logger.critical(
+            f"Restart rate limit reached ({len(timestamps)}/{max_restarts} in {window_seconds}s). "
+            "Skipping os.execv; external supervisor should recover if needed."
+        )
+        return False
+
+    timestamps.append(now)
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(str(ts) for ts in timestamps[-max_restarts:]) + "\n")
+    except OSError as e:
+        logger.warning(f"Could not write restart rate-limit file: {e}")
+    return True
+
+
 def trigger_script_restart(reason: str):
     """
     Triggers a complete restart of the application script.
@@ -105,8 +168,11 @@ def trigger_script_restart(reason: str):
         reason: Descriptive reason for the restart (logged as critical)
     """
     logger.critical(f"Triggering script restart due to: {reason}")
+    if not should_allow_full_restart():
+        sys.exit(1)
     try:
-        os.execv(sys.executable, ['python'] + sys.argv)
+        # Use the real interpreter path; hardcoding 'python' breaks on many Linux installs.
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except OSError as e:
         logger.error(f"Failed to restart script: {e}")
         sys.exit(1)

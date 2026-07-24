@@ -1,8 +1,17 @@
+# core/constants.py
 """
-Centralized constants for the Solar Monitoring application.
+Core Application Constants
 
-This module defines constants used throughout the application to avoid magic
-strings and provide a single source of truth for configuration values.
+Centralized constants for the Solar Monitoring Framework to avoid magic strings
+and provide a single source of truth for filenames, logger names, and thread names.
+
+Features:
+- Application and file name constants (config, log, lock)
+- Core logger name definitions
+- Thread name prefixes used by the plugin manager and main loop
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 # Application Details

@@ -1,4 +1,21 @@
 # services/mqtt_service.py
+"""
+MQTT / Home Assistant Service
+
+Publishes standardized solar/BMS metrics to MQTT with optional Home Assistant
+MQTT discovery for the Solar Monitoring Framework.
+
+Features:
+- MQTT client lifecycle and reconnect handling
+- Home Assistant discovery payloads for sensors/binary sensors
+- Queued publish of live shared_data updates
+- Online/offline availability topics
+- Configurable topic prefixes and credentials from config.ini
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import paho.mqtt.client as mqtt
 import logging
 import threading
@@ -36,6 +53,9 @@ class MqttService:
         self.bridge_unique_id = "solar_monitor_bridge"
         self._is_connected = threading.Event()
         self._reconnect_delay = 1
+        self._max_reconnect_delay = 60
+        self._loop_started = False
+        self._needs_backoff = False  # True after disconnect/failure; False before first connect
 
     def start(self):
         """
@@ -104,13 +124,53 @@ class MqttService:
         
         self.client.will_set(f"{self.app_state.mqtt_topic}/bridge/status", STATUS_OFFLINE, qos=1, retain=True)
 
+    def _set_mqtt_state(self, state: str) -> None:
+        """Publish MQTT connection status for console/web dashboards."""
+        self.app_state.mqtt_last_state = state
+
+    def _stop_network_loop(self) -> None:
+        """Stop the Paho network loop and clear connection state (safe to call repeatedly)."""
+        self._is_connected.clear()
+        if not self.client:
+            self._loop_started = False
+            return
+        try:
+            if self._loop_started or self.client.is_connected():
+                try:
+                    self.client.disconnect()
+                except Exception:
+                    pass
+                try:
+                    self.client.loop_stop()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"MQTT Service: Error stopping network loop: {e}")
+        finally:
+            self._loop_started = False
+            self._is_connected.clear()
+
+    def _wait_before_reconnect(self, reason: str = "Disconnected") -> None:
+        """
+        Wait with exponential backoff, updating status each second so UIs can show
+        remaining time until the next reconnect attempt.
+        """
+        delay = max(1, int(self._reconnect_delay))
+        logger.warning(f"MQTT Service: {reason}. Reconnecting in {delay}s...")
+        for remaining in range(delay, 0, -1):
+            if self.stop_event.is_set():
+                return
+            self._set_mqtt_state(f"Reconnect in {remaining}s")
+            self.stop_event.wait(1.0)
+        self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
+
     def _run(self):
         """Main run loop for the MQTT service thread.
 
         This loop manages the connection lifecycle. It attempts to connect to the broker,
         and if successful, enters a sub-loop to process data from the dispatch queue.
         If the connection is lost or fails, it implements an exponential backoff
-        strategy for reconnection attempts.
+        strategy for reconnection attempts and surfaces a live reconnect countdown.
         """
         self._setup_client()
         
@@ -130,40 +190,51 @@ class MqttService:
         while not self.stop_event.is_set():
             try:
                 if not self._is_connected.is_set():
-                    logger.info(f"MQTT Service: Attempting to connect to broker at {broker_host}:{port}...")
-                    self.client.connect(broker_host, port, 60)
-                    self.client.loop_start() # Start a background thread for network traffic
-                    self._is_connected.wait(timeout=10) # Wait for on_connect callback
+                    self._stop_network_loop()
+                    if self._needs_backoff:
+                        self._wait_before_reconnect("Disconnected from broker")
+                        if self.stop_event.is_set():
+                            break
 
-                if self._is_connected.is_set():
+                    self._set_mqtt_state("Connecting...")
+                    logger.info(f"MQTT Service: Attempting to connect to broker at {broker_host}:{port}...")
                     try:
-                        dispatch_package = self.app_state.processed_data_dispatch_queue.get(timeout=1.0)
-                        if dispatch_package:
-                            self._publish_data_packet(dispatch_package)
-                    except queue.Empty:
-                        continue # Go back to the top of the loop to wait again
-                else:
-                    # Connection failed or was lost
-                    if self.client.is_connected(): self.client.loop_stop() # Stop the background thread if it's running
-                    logger.warning(f"MQTT connection failed or was lost after waiting. Retrying in {self._reconnect_delay}s...")
-                    self.stop_event.wait(self._reconnect_delay)
-                    self._reconnect_delay = min(self._reconnect_delay * 2, 60) # Exponential backoff
+                        self.client.connect(broker_host, port, 60)
+                        self.client.loop_start()
+                        self._loop_started = True
+                        self._is_connected.wait(timeout=10)  # Wait for on_connect callback
+                    except (ConnectionRefusedError, OSError, TimeoutError) as e:
+                        logger.error(f"MQTT connection error: {e}")
+                        self._needs_backoff = True
+                        self._stop_network_loop()
+                        continue
+
+                    if not self._is_connected.is_set():
+                        logger.warning("MQTT Service: Connect attempt timed out or was rejected.")
+                        self._needs_backoff = True
+                        self._stop_network_loop()
+                        continue
+
+                # Connected — publish from the dispatch queue
+                try:
+                    dispatch_package = self.app_state.processed_data_dispatch_queue.get(timeout=1.0)
+                    if dispatch_package:
+                        self._publish_data_packet(dispatch_package)
+                except queue.Empty:
+                    pass
+
+                # Dropped offline while idle/publishing — back off before next connect
+                if not self._is_connected.is_set() and not self.stop_event.is_set():
+                    self._needs_backoff = True
             
-            except (ConnectionRefusedError, OSError, TimeoutError) as e:
-                logger.error(f"MQTT connection error: {e}. Retrying in {self._reconnect_delay}s...")
-                self._is_connected.clear()
-                if self.client.is_connected(): self.client.loop_stop()
-                self.app_state.mqtt_last_state = "Connection Error"
-                self.stop_event.wait(self._reconnect_delay)
-                self._reconnect_delay = min(self._reconnect_delay * 2, 60)
             except Exception as e:
                 logger.error(f"MQTT Service: Unhandled exception in run loop: {e}", exc_info=True)
-                self._is_connected.clear()
-                if self.client.is_connected(): self.client.loop_stop()
-                self.stop_event.wait(5)
+                self._needs_backoff = True
+                self._stop_network_loop()
+                prev = self._reconnect_delay
+                self._reconnect_delay = max(prev, 5)
         
-        if self.client.is_connected():
-            self.client.loop_stop()
+        self._stop_network_loop()
 
     def _on_connect(self, client, userdata, flags, rc):
         """
@@ -176,15 +247,17 @@ class MqttService:
             rc (int): The connection result. 0 means success.
         """
         if rc == 0:
-            self.app_state.mqtt_last_state = "connected"
+            self._set_mqtt_state("connected")
             self._is_connected.set()
             self._reconnect_delay = 1
+            self._needs_backoff = False
             self._discovered_instances.clear()
             logger.info("MQTT Service: Successfully connected to broker. Will attempt HA discovery on next data packet.")
             client.publish(f"{self.app_state.mqtt_topic}/bridge/status", STATUS_ONLINE, qos=1, retain=True)
         else:
-            self.app_state.mqtt_last_state = f"Failed ({rc})"
+            self._set_mqtt_state(f"Failed ({rc})")
             self._is_connected.clear()
+            self._needs_backoff = True
             logger.error(f"MQTT Service: Failed to connect. Return code: {rc} - {mqtt.connack_string(rc)}")
 
     def _on_disconnect(self, client, userdata, rc):
@@ -196,10 +269,20 @@ class MqttService:
             userdata: The private user data as set in Client() or user_data_set().
             rc (int): The disconnection result.
         """
-        self.app_state.mqtt_last_state = "Disconnected"
         self._is_connected.clear()
+        if self.stop_event.is_set():
+            self._set_mqtt_state("Disconnected")
+            return
+        self._needs_backoff = True
+        delay = max(1, int(self._reconnect_delay))
+        self._set_mqtt_state(f"Reconnect in {delay}s")
         if rc != 0:
-             logger.warning(f"MQTT Service: Unexpectedly disconnected from broker. RC: {rc}. Reconnection will be attempted.")
+            logger.warning(
+                f"MQTT Service: Unexpectedly disconnected from broker. RC: {rc}. "
+                f"Reconnecting in {delay}s..."
+            )
+        else:
+            logger.info(f"MQTT Service: Disconnected from broker. Reconnecting in {delay}s...")
 
     def _calculate_time_remaining(self, data: dict) -> str:
         """
@@ -343,12 +426,19 @@ class MqttService:
             {"key": StandardDataKeys.PV_TOTAL_DC_POWER_WATTS, "p": 0, "name": "PV Power", "unit":"W", "device_class":"power", "state_class":"measurement", "icon": "mdi:solar-power", "category": "inverter"},
             {"key": StandardDataKeys.LOAD_TOTAL_POWER_WATTS, "p": 0, "name": "Load Power", "unit":"W", "device_class":"power", "state_class":"measurement", "icon": "mdi:home-lightning-bolt", "category": "inverter"},
             {"key": StandardDataKeys.GRID_TOTAL_ACTIVE_POWER_WATTS, "p": 0, "name": "Grid Power", "unit":"W", "device_class":"power", "state_class":"measurement", "icon": "mdi:transmission-tower", "category": "inverter"},
+            {"key": StandardDataKeys.AC_POWER_WATTS, "p": 0, "name": "AC Power", "unit":"W", "device_class":"power", "state_class":"measurement", "icon": "mdi:flash", "category": "inverter"},
             {"key": StandardDataKeys.ENERGY_PV_DAILY_KWH, "p": 2, "name": "PV Yield Today", "unit": "kWh", "device_class": "energy", "state_class": "total", "icon": "mdi:solar-power-variant", "category": "inverter"},
+            {"key": StandardDataKeys.ENERGY_PV_TOTAL_LIFETIME_KWH, "p": 2, "name": "PV Yield Lifetime", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "icon": "mdi:solar-power-variant", "category": "inverter"},
             {"key": StandardDataKeys.ENERGY_LOAD_DAILY_KWH, "p": 2, "name": "Load Energy Today", "unit": "kWh", "device_class": "energy", "state_class": "total", "icon": "mdi:home-lightning-bolt-outline", "category": "inverter"},
+            {"key": StandardDataKeys.ENERGY_LOAD_TOTAL_KWH, "p": 2, "name": "Load Energy Lifetime", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "icon": "mdi:home-lightning-bolt-outline", "category": "inverter"},
             {"key": StandardDataKeys.ENERGY_GRID_DAILY_IMPORT_KWH, "p": 2, "name": "Grid Import Today", "unit": "kWh", "device_class": "energy", "state_class": "total", "icon": "mdi:transmission-tower-import", "category": "inverter"},
+            {"key": StandardDataKeys.ENERGY_GRID_TOTAL_IMPORT_KWH, "p": 2, "name": "Grid Import Lifetime", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "icon": "mdi:transmission-tower-import", "category": "inverter"},
             {"key": StandardDataKeys.ENERGY_GRID_DAILY_EXPORT_KWH, "p": 2, "name": "Grid Export Today", "unit": "kWh", "device_class": "energy", "state_class": "total", "icon": "mdi:transmission-tower-export", "category": "inverter"},
+            {"key": StandardDataKeys.ENERGY_GRID_TOTAL_EXPORT_KWH, "p": 2, "name": "Grid Export Lifetime", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "icon": "mdi:transmission-tower-export", "category": "inverter"},
             {"key": StandardDataKeys.ENERGY_BATTERY_DAILY_CHARGE_KWH, "p": 2, "name": "Battery Charge Today", "unit": "kWh", "device_class": "energy", "state_class": "total", "icon": "mdi:battery-arrow-up", "category": "inverter"},
+            {"key": StandardDataKeys.ENERGY_BATTERY_TOTAL_CHARGE_KWH, "p": 2, "name": "Battery Charge Lifetime", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "icon": "mdi:battery-arrow-up", "category": "inverter"},
             {"key": StandardDataKeys.ENERGY_BATTERY_DAILY_DISCHARGE_KWH, "p": 2, "name": "Battery Discharge Today", "unit": "kWh", "device_class": "energy", "state_class": "total", "icon": "mdi:battery-arrow-down", "category": "inverter"},
+            {"key": StandardDataKeys.ENERGY_BATTERY_TOTAL_DISCHARGE_KWH, "p": 2, "name": "Battery Discharge Lifetime", "unit": "kWh", "device_class": "energy", "state_class": "total_increasing", "icon": "mdi:battery-arrow-down", "category": "inverter"},
             
             # Inverter Status & Details
              {"key": StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT, "name": "Inverter Status", "icon": "mdi:information-outline", "category": "inverter"},
@@ -400,6 +490,9 @@ class MqttService:
             {"key": StandardDataKeys.BMS_CELL_WITH_MAX_VOLTAGE_NUMBER, "name": "BMS Cell with Max Voltage", "icon": "mdi:numeric-up", "category": "bms"},
             {"key": StandardDataKeys.BMS_FULL_CAPACITY_AH, "p": 2, "name": "BMS Full Capacity", "unit": "Ah", "icon": "mdi:battery", "category": "bms"},
             {"key": StandardDataKeys.BMS_REMAINING_CAPACITY_AH, "p": 2, "name": "BMS Remaining Capacity", "unit": "Ah", "icon": "mdi:battery-medium", "category": "bms"},
+            # Combined multi-pack aggregation (bridge-level)
+            {"key": "bms_pack_count", "name": "BMS Pack Count", "icon": "mdi:battery-multiple", "category": "bms", "state_class": "measurement"},
+            {"key": "bms_aggregation_mode", "name": "BMS Aggregation Mode", "icon": "mdi:set-merge", "category": "bms"},
         ]
 
     def _publish_discovery_for_instance(self, instance_id: str, plugin: DevicePlugin, instance_data_wrapped: Optional[Dict], merged_data_wrapped: Optional[Dict]) -> bool:

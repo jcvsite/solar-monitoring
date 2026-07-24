@@ -1,0 +1,18 @@
+[Unit]
+Description=Solar Monitoring Framework
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/solar-monitoring
+ExecStart=/opt/solar-monitoring/venv/bin/python /opt/solar-monitoring/main.py
+Restart=always
+RestartSec=5
+# Give the in-app watchdog time to recover before systemd races a restart
+TimeoutStopSec=30
+KillMode=mixed
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

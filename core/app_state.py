@@ -1,4 +1,22 @@
 # core/app_state.py
+"""
+Application State Container
+
+Centralized, thread-aware shared state for the Solar Monitoring Framework.
+Holds configuration, active plugins, queues, services handles, and runtime
+flags used across core threads and services.
+
+Features:
+- Single source of truth for shared runtime data
+- Plugin instance and stop-event registries
+- Inter-thread queues for plugin data and UI updates
+- MQTT/web/update-check related state fields
+- Safe access patterns for concurrent readers/writers
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import threading
 import queue
 import paho.mqtt.client as mqtt

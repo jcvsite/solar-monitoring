@@ -1,4 +1,21 @@
 # services/database_service.py
+"""
+SQLite Database Service
+
+Persists power-flow samples and daily energy summaries for historical charts and
+analytics in the Solar Monitoring Framework.
+
+Features:
+- Background writer thread with queued inserts
+- Power history and daily summary tables
+- Optional prune by DAILY_SUMMARY_MAX_AGE_DAYS
+- Periodic SQLite optimize / auto-vacuum support
+- Query helpers used by the web dashboard charts
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import sqlite3
 import logging
 import threading
@@ -31,11 +48,15 @@ class DatabaseService:
         self.app_state = app_state
         self.db_file = self.app_state.config.get('DATABASE', 'DB_FILE', fallback="solis_history.db")
         self.history_max_hours = self.app_state.config.getint('DATABASE', 'HISTORY_MAX_AGE_HOURS', fallback=168)
+        self.enable_auto_vacuum = self.app_state.config.getboolean('DATABASE', 'ENABLE_AUTO_VACUUM', fallback=True)
+        self.vacuum_interval_hours = self.app_state.config.getint('DATABASE', 'VACUUM_INTERVAL_HOURS', fallback=168)
+        self.daily_summary_max_age_days = self.app_state.config.getint('DATABASE', 'DAILY_SUMMARY_MAX_AGE_DAYS', fallback=0)
         self.conn_params = {"timeout": 30, "check_same_thread": False}
         self._thread = None
         # Periodic verification tracking
         self._last_verification_date = None
         self._verification_times = [(1, 0), (23, 0)]  # 1:00 AM and 11:00 PM
+        self._last_vacuum_monotonic = 0.0
         self._init_db()
 
     def start(self):
@@ -83,7 +104,8 @@ class DatabaseService:
         Removes old power history records beyond the configured retention period.
         
         Deletes records from the power_history table that are older than
-        HISTORY_MAX_AGE_HOURS. Daily summary records are kept indefinitely.
+        HISTORY_MAX_AGE_HOURS. Optionally prunes daily_summary when
+        DAILY_SUMMARY_MAX_AGE_DAYS > 0.
         """
         cutoff_ms = int((datetime.now(timezone.utc) - timedelta(hours=self.history_max_hours)).timestamp() * 1000)
         try:
@@ -92,8 +114,39 @@ class DatabaseService:
                 cursor.execute("DELETE FROM power_history WHERE timestamp < ?", (cutoff_ms,))
                 deleted_count = cursor.rowcount
                 if deleted_count > 0: logger.info(f"Pruned {deleted_count} old power history records.")
+                if self.daily_summary_max_age_days and self.daily_summary_max_age_days > 0:
+                    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=self.daily_summary_max_age_days)).strftime("%Y-%m-%d")
+                    cursor.execute("DELETE FROM daily_summary WHERE date < ?", (cutoff_date,))
+                    summary_deleted = cursor.rowcount
+                    if summary_deleted > 0:
+                        logger.info(f"Pruned {summary_deleted} old daily_summary rows older than {cutoff_date}.")
+                conn.commit()
         except Exception as e:
             logger.error(f"Error pruning database: {e}")
+
+    def maybe_optimize_and_vacuum(self):
+        """Run PRAGMA optimize periodically and VACUUM on the configured interval."""
+        if not self.enable_auto_vacuum:
+            return
+        now = time.monotonic()
+        interval_s = max(1, self.vacuum_interval_hours) * 3600
+        if self._last_vacuum_monotonic and (now - self._last_vacuum_monotonic) < interval_s:
+            return
+        try:
+            import os
+            size_before = os.path.getsize(self.db_file) if os.path.exists(self.db_file) else 0
+            with self.app_state.db_lock, sqlite3.connect(self.db_file, **self.conn_params) as conn:
+                conn.execute("PRAGMA optimize;")
+                # VACUUM cannot run inside a transaction; ensure autocommit
+                conn.isolation_level = None
+                conn.execute("VACUUM;")
+            size_after = os.path.getsize(self.db_file) if os.path.exists(self.db_file) else 0
+            self._last_vacuum_monotonic = now
+            logger.info(
+                f"Database VACUUM complete. Size before={size_before} bytes, after={size_after} bytes."
+            )
+        except Exception as e:
+            logger.error(f"Error during database optimize/vacuum: {e}", exc_info=True)
 
     def _run(self):
         """Main loop that periodically stores the latest processed data."""
@@ -118,6 +171,7 @@ class DatabaseService:
                 
                 # Check if it's time for periodic verification
                 self._check_periodic_verification()
+                self.maybe_optimize_and_vacuum()
 
             except Exception as e:
                 logger.error(f"Database service loop error: {e}", exc_info=True)

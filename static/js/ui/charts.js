@@ -128,31 +128,57 @@ export function initializeCharts() {
          maintainAspectRatio: false,
          spanGaps: true,
          parsing: false,
+         layout: {
+            padding: { top: 2, right: 4, bottom: 0, left: 2 }
+         },
          scales: {
             x: {
                type: 'time',
                time: { unit: 'hour', tooltipFormat: 'yyyy-MM-dd HH:mm', displayFormats: { hour: 'HH:mm' } },
-               title: { display: true, text: 'Time', color: getThemeColor('title') },
-               ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10, color: getThemeColor('text') },
+               title: { display: false, text: 'Time', color: getThemeColor('title') },
+               ticks: {
+                  maxRotation: 0,
+                  autoSkip: true,
+                  maxTicksLimit: 10,
+                  color: getThemeColor('text'),
+                  padding: 2
+               },
                grid: { color: getThemeColor('grid') }
             },
             y: {
-               title: { display: true, text: 'SOC (%)', color: getThemeColor('title') },
+               title: {
+                  display: true,
+                  text: 'SOC (%)',
+                  color: getThemeColor('title'),
+                  padding: { top: 0, bottom: 0 }
+               },
                position: 'left', beginAtZero: true, max: 100,
-               ticks: { color: getThemeColor('text') },
+               ticks: { color: getThemeColor('text'), padding: 2 },
                grid: { color: getThemeColor('grid') }
             },
             y1: {
-               title: { display: true, text: 'Power (W)', color: getThemeColor('title') },
+               title: {
+                  display: true,
+                  text: 'Power (W)',
+                  color: getThemeColor('title'),
+                  padding: { top: 0, bottom: 0 }
+               },
                position: 'right', beginAtZero: false,
                grid: { drawOnChartArea: false },
-               ticks: { color: getThemeColor('text') }
+               ticks: { color: getThemeColor('text'), padding: 2 }
             }
          },
          plugins: {
             legend: {
                position: 'top',
-               labels: { usePointStyle: true, boxWidth: 10, padding: 15, color: getThemeColor('text') }
+               align: 'center',
+               labels: {
+                  usePointStyle: true,
+                  boxWidth: 8,
+                  boxHeight: 8,
+                  padding: 8,
+                  color: getThemeColor('text')
+               }
             },
             tooltip: {
                mode: 'index',
@@ -243,18 +269,19 @@ export function initializeCharts() {
       options: {
          responsive: true,
          maintainAspectRatio: false,
+         layout: { padding: { top: 2, right: 4, bottom: 0, left: 2 } },
          scales: {
             x: {
                type: 'time',
                time: { unit: 'day', tooltipFormat: 'MMM d, yyyy', displayFormats: { day: 'MMM d' } },
-               title: { display: true, text: 'Date', color: getThemeColor('title') },
-               ticks: { color: getThemeColor('text') },
+               title: { display: false, text: 'Date', color: getThemeColor('title') },
+               ticks: { color: getThemeColor('text'), padding: 2 },
                grid: { color: getThemeColor('grid') }
             },
             y: {
-               title: { display: true, text: 'Energy (kWh)', color: getThemeColor('title') },
+               title: { display: true, text: 'Energy (kWh)', color: getThemeColor('title'), padding: { top: 0, bottom: 0 } },
                beginAtZero: true,
-               ticks: { callback: v => v.toFixed(1), color: getThemeColor('text') },
+               ticks: { callback: v => v.toFixed(1), color: getThemeColor('text'), padding: 2 },
                grid: { color: getThemeColor('grid') }
             }
          },
@@ -265,7 +292,8 @@ export function initializeCharts() {
                   color: getThemeColor('text'),
                   usePointStyle: true,
                   pointStyle: 'rectRounded',
-                  boxWidth: 12
+                  boxWidth: 10,
+                  padding: 8
                },
                onClick: (e, legendItem, legend) => {
                   const index = legendItem.datasetIndex;
@@ -372,12 +400,14 @@ export function initializeCharts() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: { padding: { top: 2, right: 4, bottom: 0, left: 2 } },
             scales: {
                 x: {
                     stacked: true,
-                    title: { display: true, text: 'Hour of Day', color: getThemeColor('title') },
+                    title: { display: false, text: 'Hour of Day', color: getThemeColor('title') },
                     ticks: {
                         color: getThemeColor('text'),
+                        padding: 2,
                         callback: function (val, index) {
                             const hour = this.getLabelForValue(val);
                             if (hour % 2 !== 0) return ''; // Show every 2 hours
@@ -390,9 +420,10 @@ export function initializeCharts() {
                 },
                 y: {
                     stacked: true,
-                    title: { display: true, text: 'Energy (kWh)', color: getThemeColor('title') },
+                    title: { display: true, text: 'Energy (kWh)', color: getThemeColor('title'), padding: { top: 0, bottom: 0 } },
                     ticks: {
                         color: getThemeColor('text'),
+                        padding: 2,
                         callback: v => Math.abs(v).toFixed(1)
                     },
                     grid: { color: getThemeColor('grid') }
@@ -405,7 +436,8 @@ export function initializeCharts() {
                       color: getThemeColor('text'),
                       usePointStyle: true,
                       pointStyle: 'rectRounded',
-                      boxWidth: 12
+                      boxWidth: 10,
+                      padding: 8
                    }
                 },
                 tooltip: {

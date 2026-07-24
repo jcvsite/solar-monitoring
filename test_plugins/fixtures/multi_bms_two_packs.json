@@ -1,0 +1,6 @@
+﻿{
+  "packs": [
+    {"instance_id": "BMS_A", "soc": 80.0, "full_ah": 100.0, "remaining_ah": 80.0, "power": -500.0, "current": -10.0, "voltage": 51.2, "status": "Charging"},
+    {"instance_id": "BMS_B", "soc": 50.0, "full_ah": 200.0, "remaining_ah": 100.0, "power": 1200.0, "current": 23.4, "voltage": 50.8, "status": "Discharging"}
+  ]
+}

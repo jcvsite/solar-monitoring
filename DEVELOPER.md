@@ -23,12 +23,14 @@ The Solar Monitoring Framework uses a robust, multi-threaded architecture design
 ### 🔄 Key Features
 
 - **🧵 Multi-threaded**: Each device polled independently (5s intervals)
-- **🔄 Data Processing**: Central processor merges, filters, and enriches data
+- **🔄 Data Processing**: Central processor merges, filters, enriches data, and runs multi-BMS aggregation
 - **📤 Real-time Distribution**: Simultaneous updates to all services
 - **🛡️ Self-healing**: 3-layer monitoring with automatic recovery
+- **✅ Startup validation**: Config schema + plugin metadata logged on load
 - **🏠 HA Integration**: MQTT auto-discovery with availability tracking
-- **📊 Rich Interfaces**: Web dashboard, console UI, database logging
-- **🔌 Extensible**: Plugin architecture for new device types
+- **📈 Ops**: Optional Prometheus `/metrics`, SQLite vacuum/retention
+- **📊 Rich Interfaces**: Web dashboard (density + health + FW badges), console UI (`FONT_SCALE`), database logging
+- **🔌 Extensible**: Plugin architecture with `PLUGIN_META` for capability discovery
 
 ### 🛡️ Monitoring System
 
@@ -37,12 +39,13 @@ The Solar Monitoring Framework uses a robust, multi-threaded architecture design
 | **Watchdog** | Data responsiveness | 120s | Plugin restart |
 | **Thread Monitor** | Thread lifecycle | 60s | Thread recreation |
 | **MQTT Availability** | HA integration | 15min | Availability status |
+| **Plugin health keys** | UI / Prometheus | per cycle | Expose age + failures |
 
 ### 📊 Data Flow
 
-1. **Plugins** → Poll devices every 5s
-2. **Processor** → Merge, filter, enrich data  
-3. **Services** → Update dashboards, MQTT, database
+1. **Plugins** → Poll devices every 5s (sanitized packets)
+2. **Processor** → Merge, **BMS aggregate**, filter, enrich (`*_health_*` keys)
+3. **Services** → Web, console, MQTT, database, optional Prometheus
 4. **Monitoring** → Ensure all components stay healthy
 
 ## Plugin Development
@@ -55,6 +58,15 @@ All plugins must inherit from `DevicePlugin` and implement the required abstract
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys
 
 class MyNewPlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "my_new_plugin",
+        "category": "inverter",  # or "bms"
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["ModelA"],
+        "status": "testing",  # stable | testing | experimental
+        "api_version": 1,
+    }
+
     def __init__(self, instance_name, plugin_specific_config, main_logger, app_state):
         super().__init__(instance_name, plugin_specific_config, main_logger, app_state)
         # Your initialization logic here
@@ -83,6 +95,16 @@ class MyNewPlugin(DevicePlugin):
         # Read operational data
         pass
 ```
+
+`DevicePlugin.get_plugin_meta()` returns `PLUGIN_META` (or a safe default). On load, `plugin_manager` stores it at `plugin.plugin_config["_plugin_meta"]` and logs it.
+
+### Modbus plugins
+
+Prefer [`plugins/modbus_helper.py`](plugins/modbus_helper.py) for client creation and `unit=`/`slave=`-compatible reads (`create_modbus_client`, `safe_read_holding` / `safe_read_input`, `decode_registers`). Solis is the reference migration; other Modbus plugins should converge on the same helper for pymodbus compatibility.
+
+### Multi-BMS note
+
+BMS plugins should publish SOC, voltage, current, power, and capacity Ah keys when available. The aggregator (`core/bms_aggregator.py`) combines all instances with `_runtime_device_category == "bms"` using capacity-weighted SOC. Do not invent a separate “combined SOC” key for the main tile — write standard battery keys; the processor overwrites them with the aggregate when multiple packs exist.
 
 ### 📋 Required Methods
 
@@ -156,8 +178,10 @@ The framework provides comprehensive design references based on proven, stable p
 1. **Consistency**: Follow established patterns from stable plugins
 2. **Error Handling**: Comprehensive exception handling and logging
 3. **Connection Management**: Robust connection lifecycle management
-4. **Data Validation**: Type checking and data sanitization
+4. **Data Validation**: Type checking and data sanitization (`core/data_sanitizer.py`)
 5. **Documentation**: Complete docstrings and code comments
+6. **Capability Metadata**: Declare `PLUGIN_META` (id, category, protocols, models, status)
+7. **Config Discoverability**: Implement `get_configurable_params()` so the validator and docs stay accurate
 
 ## Development Workflow
 
@@ -212,6 +236,13 @@ The framework provides comprehensive design references based on proven, stable p
 4. **Comprehensive Validation**:
    ```bash
    python test_plugins/validate_all_plugins.py
+   ```
+
+5. **Offline Capture / HA Regression** (no hardware):
+   ```bash
+   python -m unittest test_plugins.test_capture_replay -v
+   python -m unittest test_plugins.test_ha_discovery_coverage -v
+   python -m unittest test_plugins.test_data_sanitizer_and_jk_decoder -v
    ```
 
 ### 4. 📝 Documentation Phase

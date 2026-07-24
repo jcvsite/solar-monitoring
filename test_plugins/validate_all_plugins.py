@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# test_plugins/validate_all_plugins.py
 """
 Comprehensive Plugin Validation Test Suite
 
@@ -38,7 +39,8 @@ Examples:
     # Generate detailed report
     python test_plugins/validate_all_plugins.py --report-file validation_report.txt
 
-GitHub: https://github.com/jcvsite/solar-monitoring
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 import os

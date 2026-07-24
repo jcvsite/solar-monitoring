@@ -63,6 +63,14 @@ class ConnectionType(str, Enum):
     TCP = "tcp"
     SERIAL = "serial"
 class DeyeSunsynkPlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "deye_sunsynk",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["SUN-5K-SG04LP1", "Sunsynk 5K", "SG01HP3"],
+        "status": "testing",
+        "api_version": 1,
+    }
     """
     Plugin for Deye and Sunsynk hybrid inverters using Modbus communication.
     
@@ -183,26 +191,71 @@ class DeyeSunsynkPlugin(DevicePlugin):
         self.max_read_retries_per_group = int(self.plugin_config.get("max_read_retries_per_group", 2))
         self._max_waiting_polls = int(self.plugin_config.get("max_consecutive_waiting_polls", 5))
         
-        self.model_series = self.plugin_config.get("deye_model_series", "modern_hybrid").lower()
-        self.registers_map = DEYE_COMMON_REGISTERS.copy()
-        if self.model_series == "modern_hybrid":
-            self.registers_map.update(DEYE_MODERN_HYBRID_REGISTERS)
-        elif self.model_series == "legacy_hybrid":
-            self.registers_map.update(DEYE_LEGACY_HYBRID_REGISTERS)
-        elif self.model_series == "three_phase":
-            self.registers_map.update(DEYE_THREE_PHASE_REGISTERS)
-        else:
-            self.logger.warning(f"Unknown 'deye_model_series', defaulting to 'modern_hybrid'.")
-            self.registers_map.update(DEYE_MODERN_HYBRID_REGISTERS)
-            
-        self.static_registers_map = {k: v for k, v in self.registers_map.items() if v.get("static")}
-        self.dynamic_registers_map = {k: v for k, v in self.registers_map.items() if not v.get("static")}
-        self.dynamic_read_groups = self._build_modbus_read_groups(list(self.dynamic_registers_map.items()))
+        self.model_series_cfg = str(self.plugin_config.get("deye_model_series", "auto")).split(";")[0].strip().lower()
+        self.model_series = self.model_series_cfg if self.model_series_cfg != "auto" else "modern_hybrid"
+        self._series_auto_detected = False
+        self._apply_model_series_map(self.model_series)
         self._waiting_status_counter = 0
         self.client = None # Initialized in connect()
 
         target_info = f"{self.tcp_host}:{self.tcp_port}" if self.connection_type == ConnectionType.TCP else f"{self.serial_port}:{self.baud_rate}"
-        self.logger.info(f"Deye/Sunsynk Plugin '{self.instance_name}' initialized. Model: {self.model_series}, Conn: {self.connection_type.value}, Target: {target_info}, SlaveID: {self.slave_address}")
+        self.logger.info(f"Deye/Sunsynk Plugin '{self.instance_name}' initialized. Model: {self.model_series_cfg}, Conn: {self.connection_type.value}, Target: {target_info}, SlaveID: {self.slave_address}")
+
+    def _apply_model_series_map(self, series: str) -> None:
+        """Select register map for the given model series and rebuild read groups."""
+        self.model_series = series
+        self.registers_map = DEYE_COMMON_REGISTERS.copy()
+        if series == "modern_hybrid":
+            self.registers_map.update(DEYE_MODERN_HYBRID_REGISTERS)
+        elif series == "legacy_hybrid":
+            self.registers_map.update(DEYE_LEGACY_HYBRID_REGISTERS)
+        elif series == "three_phase":
+            self.registers_map.update(DEYE_THREE_PHASE_REGISTERS)
+        else:
+            self.logger.warning(f"Unknown 'deye_model_series' '{series}', defaulting to 'modern_hybrid'.")
+            self.model_series = "modern_hybrid"
+            self.registers_map.update(DEYE_MODERN_HYBRID_REGISTERS)
+        self.static_registers_map = {k: v for k, v in self.registers_map.items() if v.get("static")}
+        self.dynamic_registers_map = {k: v for k, v in self.registers_map.items() if not v.get("static")}
+        self.dynamic_read_groups = self._build_modbus_read_groups(list(self.dynamic_registers_map.items()))
+
+    def _probe_series_fingerprint(self, address: int) -> bool:
+        """Return True if a single holding register read at address succeeds."""
+        if not self.client:
+            return False
+        try:
+            try:
+                result = self.client.read_holding_registers(address=address, count=1, unit=self.slave_address)
+            except TypeError:
+                result = self.client.read_holding_registers(address=address, count=1, slave=self.slave_address)
+            if result is None or getattr(result, "isError", lambda: True)():
+                return False
+            regs = getattr(result, "registers", None)
+            return bool(regs)
+        except Exception:
+            return False
+
+    def _auto_detect_model_series(self) -> None:
+        """Probe distinctive status registers to choose modern/legacy/three_phase map."""
+        # Prefer modern (500), then three-phase (640), then legacy (59).
+        candidates = [
+            ("modern_hybrid", 500),
+            ("three_phase", 640),
+            ("legacy_hybrid", 59),
+        ]
+        for series, addr in candidates:
+            if self._probe_series_fingerprint(addr):
+                self._apply_model_series_map(series)
+                self._series_auto_detected = True
+                self.logger.info(
+                    f"DeyePlugin '{self.instance_name}': auto-detected model series '{series}' "
+                    f"(fingerprint register {addr})."
+                )
+                return
+        self._apply_model_series_map("modern_hybrid")
+        self.logger.warning(
+            f"DeyePlugin '{self.instance_name}': auto-detect failed; falling back to 'modern_hybrid'."
+        )
 
     @staticmethod
     def get_configurable_params() -> List[Dict[str, Any]]:
@@ -214,7 +267,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
             {"name": "serial_port", "type": str, "default": "/dev/ttyUSB0", "description": "Serial port for Modbus RTU."},
             {"name": "baud_rate", "type": int, "default": 9600, "description": "Baud rate for serial connection."},
             {"name": "slave_address", "type": int, "default": 1, "description": "Modbus slave address (unit ID)."},
-            {"name": "deye_model_series", "type": str, "default": "modern_hybrid", "description": "The Deye/Sunsynk model series for the correct register map.", "options": ["modern_hybrid", "legacy_hybrid", "three_phase", "deye_hybrid_yaml", "deye_2mppt", "deye_4mppt"]},
+            {"name": "deye_model_series", "type": str, "default": "auto", "description": "Register map series, or 'auto' to probe fingerprints.", "options": ["auto", "modern_hybrid", "legacy_hybrid", "three_phase"]},
             {"name": "modbus_timeout_seconds", "type": int, "default": 15, "description": "Modbus connection and read timeout in seconds."},
             {"name": "inter_read_delay_ms", "type": int, "default": 100, "description": "Delay in milliseconds between Modbus reads."},
             {"name": "modbus_max_registers_per_read", "type": int, "default": 100, "description": "Max number of registers to read in a single request."},
@@ -274,6 +327,8 @@ class DeyeSunsynkPlugin(DevicePlugin):
             if self.client.connect():
                 self._is_connected_flag = True
                 self.logger.info(f"DeyePlugin '{self.instance_name}': Successfully connected.")
+                if self.model_series_cfg == "auto" and not self._series_auto_detected:
+                    self._auto_detect_model_series()
                 return True
             else:
                 self.last_error_message = "Pymodbus client.connect() returned False."

@@ -1,4 +1,20 @@
 # core/config_loader.py
+"""
+Configuration Loader
+
+Loads `config.ini` (and selected environment overrides) into AppState for the
+Solar Monitoring Framework, including timezone, plugins, and service sections.
+
+Features:
+- INI parsing with inline-comment awareness via shared helpers where used
+- Environment variable overrides for selected settings
+- Population of AppState.config and related runtime fields
+- Core validation entrypoints used at startup
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import configparser
 import logging
 import os
@@ -158,9 +174,9 @@ def load_configuration(config_path: str, app_state: AppState):
     # Weather Widget
     app_state.enable_weather_widget = get_config_value("ENABLE_WEATHER_WIDGET", bool, False, section='WEATHER')
     if app_state.enable_weather_widget:
-        app_state.weather_use_automatic_location = get_config_value("WEATHER_USE_AUTOMATIC_LOCATION", bool, True, section='WEATHER')
-        app_state.weather_default_latitude = get_config_value("WEATHER_DEFAULT_LATITUDE", float, 51.5072, section='WEATHER')
-        app_state.weather_default_longitude = get_config_value("WEATHER_DEFAULT_LONGITUDE", float, -0.1276, section='WEATHER')
+        app_state.weather_use_automatic_location = get_config_value("WEATHER_USE_AUTOMATIC_LOCATION", bool, False, section='WEATHER')
+        app_state.weather_default_latitude = get_config_value("WEATHER_DEFAULT_LATITUDE", float, 16.6167, section='WEATHER')
+        app_state.weather_default_longitude = get_config_value("WEATHER_DEFAULT_LONGITUDE", float, 120.3166, section='WEATHER')
         app_state.weather_temperature_unit = get_config_value("WEATHER_TEMPERATURE_UNIT", str, "celsius", section='WEATHER').lower()
         app_state.weather_update_interval_minutes = get_config_value("WEATHER_UPDATE_INTERVAL_MINUTES", int, 15, section='WEATHER')
         app_state.weather_map_zoom_level = get_config_value("WEATHER_MAP_ZOOM_LEVEL", int, 5, section='WEATHER')
@@ -218,3 +234,7 @@ def validate_core_config(app_state: AppState):
         sys.exit(1)
     
     logger.info("Core configuration validated successfully.")
+
+    # Extended plugin import / schema checks (fail fast on phantom plugin types).
+    from core.config_validator import validate_and_exit_on_error
+    validate_and_exit_on_error(app_state)

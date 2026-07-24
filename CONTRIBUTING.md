@@ -40,6 +40,10 @@ pip install -r requirements.txt
 cp config.ini.example config.ini
 # Edit config.ini with your device settings
 
+# Run offline validation (recommended before PRs)
+python test_plugins/validate_all_plugins.py --offline-only
+python -m unittest test_plugins.test_capture_replay test_plugins.test_ha_discovery_coverage test_plugins.test_data_sanitizer_and_jk_decoder -v
+
 # Run the application
 python main.py
 ```
@@ -60,6 +64,15 @@ The framework uses a plugin architecture that makes adding new device support st
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys
 
 class YourDevicePlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "your_device",
+        "category": "inverter",  # or "bms"
+        "protocols": ["modbus_tcp"],
+        "models": [],
+        "status": "testing",
+        "api_version": 1,
+    }
+
     def connect(self) -> bool:
         # Implement connection logic
         pass
@@ -77,10 +90,14 @@ class YourDevicePlugin(DevicePlugin):
         pass
 ```
 
+For Modbus devices, prefer `plugins/modbus_helper.py`. For BMS plugins, publish capacity Ah keys so multi-BMS aggregation can weight SOC correctly. See [DEVELOPER.md](DEVELOPER.md) and the design reference docs.
+
 ### Testing Your Plugin
 Use the test framework in `test_plugins/`:
 ```bash
 python test_plugins/your_device_test.py
+python test_plugins/quick_plugin_check.py
+python -m unittest test_plugins.test_capture_replay test_plugins.test_ha_discovery_coverage -v
 ```
 
 ## 📋 Code Standards
@@ -92,10 +109,11 @@ python test_plugins/your_device_test.py
 - Keep functions focused and small
 
 ### Documentation
-- Update README.md for new features
-- Add configuration examples
+- Update README.md, CHANGELOG.md, and CONFIGURATION.md for new features
+- Add configuration examples to `config.ini.example`
 - Include troubleshooting information
 - Document breaking changes
+- Keep TESTING.md / DEVELOPER.md in sync with new tests and architecture hooks
 
 ### Testing
 - Test with real hardware when possible

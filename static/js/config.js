@@ -83,6 +83,9 @@ export const SDK = {
 
     // --- BMS (Battery Management System) Data ---
     BMS_PLUGIN_CONNECTION_STATUS_KEY_PATTERN: "{instance_id}_core_plugin_connection_status",
+    BMS_PACKS_LIST: "bms_packs_list",
+    BMS_PACK_COUNT: "bms_pack_count",
+    BMS_AGGREGATION_MODE: "bms_aggregation_mode",
     BMS_CELL_COUNT: "bms_cell_count",
     BMS_REMAINING_CAPACITY_AH: "bms_remaining_capacity_ah",
     BMS_FULL_CAPACITY_AH: "bms_full_capacity_ah",

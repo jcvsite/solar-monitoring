@@ -1,4 +1,25 @@
 # plugins/battery/bms_plugin_base.py
+"""
+BMS Plugin Base Classes and Shared Keys
+
+This module defines the abstract BMS plugin base and standardized BMS data keys
+used across Seplos, JK, JBD, Daly, Pylontech, and other battery plugins in the
+Solar Monitoring Framework.
+
+Features:
+- BMSPluginBase abstract class extending DevicePlugin
+- Shared BMS key aliases mapped to StandardDataKeys
+- Common helpers for cell/temperature aggregation patterns
+- Consistent last-update and identity field conventions
+
+Supported Consumers:
+- All plugins under plugins/battery/
+- Multi-BMS aggregation and web/console BMS views
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:

@@ -1,4 +1,31 @@
-# plugins/battery/seplos_bms_v2.py
+# plugins/battery/seplos_bms_v2_plugin.py
+"""
+Seplos BMS V2 Plugin
+
+This plugin communicates with Seplos battery management systems using the
+native Seplos V2 ASCII protocol over serial RS485 or TCP (RS485-to-TCP gateway).
+It provides pack-level telemetry, cell voltages/temperatures, FET status, and
+alarm/warning lists standardized for the Solar Monitoring Framework.
+
+Features:
+- Dual connection support (serial RS485 and TCP gateway)
+- Pre-connection validation for TCP connections
+- Telemetry (0x42) and telesignalization (0x44) frame exchange
+- Cell voltage and temperature monitoring with balance state
+- Pack SOC, SOH, current, voltage, capacity, and cycle tracking
+- Charge/discharge FET status and categorized alarms/warnings
+- Configurable pack address and connection parameters
+- Automatic retry mechanisms and connection recovery
+
+Supported Models:
+- Seplos BMS modules speaking Seplos protocol V2
+- Compatible packs using Seplos V2 ASCII framing (often via WiFi/RS485 gateways)
+
+Protocol Reference: Seplos BMS Communication Protocol V2
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import time
 import serial
 from serial.serialutil import SerialException, SerialTimeoutException
@@ -91,6 +118,14 @@ DEFAULT_PLUGIN_NON_DATA_VALUES_LOWER = {
 
 
 class SeplosBMSV2(BMSPluginBase):
+    PLUGIN_META = {
+        "plugin_id": "seplos_bms_v2",
+        "category": "bms",
+        "protocols": ["seplos_ascii_v2"],
+        "models": ["EMU10XX", "EMU11XX"],
+        "status": "stable",
+        "api_version": 1,
+    }
     """
     Plugin to communicate with Seplos V2 protocol BMS devices.
 
@@ -641,7 +676,20 @@ class SeplosBMSV2(BMSPluginBase):
                 except: pass 
 
             # After read attempts, try to extract and validate from the buffer
-            return self._extract_and_validate_frame_from_buffer(sent_cid2_val_int if sent_cid2_val_int !=-1 else None)
+            payload = self._extract_and_validate_frame_from_buffer(sent_cid2_val_int if sent_cid2_val_int != -1 else None)
+            if payload is None and self.last_error_message:
+                # Promote empty/timeout failures so callers see why at WARNING without DEBUG logging
+                if "No frame start" in self.last_error_message or "Incomplete frame" in self.last_error_message:
+                    buf_len = len(self.receive_buffer)
+                    self.logger.warning(
+                        "S '%s': CMD 0x%s got no valid Seplos reply (%s; buffer=%d bytes). "
+                        "Likely wrong seplos_pack_address or silent gateway.",
+                        self.instance_name,
+                        cmd_str_for_log,
+                        self.last_error_message,
+                        buf_len,
+                    )
+            return payload
 
         except Exception as e_sr_outer: 
             self.logger.error(f"S '{self.instance_name}': Outer error in _send_receive for CMD 0x{cmd_str_for_log}: {e_sr_outer}", exc_info=True)
@@ -1056,11 +1104,25 @@ class SeplosBMSV2(BMSPluginBase):
                     telesign_ok = True
         
         if not telemetry_ok and not telesign_ok:
+            err = self.last_error_message or "no valid telemetry/telesignalization frame"
+            self.last_error_message = err
+            self.logger.warning(
+                "SeplosBMSV2 '%s': Dynamic read failed (%s). "
+                "Check seplos_pack_address (often 0), TCP/serial path, and that the gateway speaks Seplos ASCII V2. "
+                "Current PackAddr=0x%02X host=%s.",
+                self.instance_name,
+                err,
+                self.pack_address,
+                f"{self.tcp_host}:{self.tcp_port}" if self.connection_type == "tcp" else self.serial_port_name,
+            )
             return None
 
         if not self._is_data_sane(all_bms_data_nested):
             self.last_error_message = "Data failed sanity check (e.g., unreasonable cell voltage)."
-            self.disconnect() 
+            # Do not hard-disconnect on a single bad packet — count as read failure for watchdog.
+            self.logger.warning(
+                f"SeplosBMSV2 '{self.instance_name}': Sanity check failed; skipping update without disconnect."
+            )
             return None
 
         status_dict = all_bms_data_nested.get(BMS_KEY_STATUS_TEXT, {})

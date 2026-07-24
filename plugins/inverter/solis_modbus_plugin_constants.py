@@ -238,10 +238,24 @@ SOLIS_FAULT_BITFIELD_MAPS: Dict[int, Dict[str, Any]] = {
         6: "BMS Over Temperature Charging", 7: "BMS Under Temperature Charging", 8: "BMS Discharging Overcurrent" }},
     33146: {"category": "bms", "bits": {
         0: "BMS Charging Overcurrent", 2: "Over SoC", 3: "BMS Internal Protection", 4: "BMS Battery Module Unbalanced" }},
+    # Operating status (33121). Bits 8–10 are "is X normal?" where 1=Yes/OK (not a fault).
+    # Source: Solis Appendix 6 / community maps (GrugBus, ginlong-solis YAML with invert on 8–10).
     33121: {"category": "status", "bits": {
-        0: "Normal Operation", 1: "Initial Standby", 3: "Load Present", 4: "Export Power Limit Active",
-        5: "Derating", 6: "Power Limiting", 7: "Import Power Limit Active", 8: "Load Failure",
-        9: "Grid Present", 10: "Battery Failure", 11: "EPS Mode Active" }}
+        0: "Normal Operation",
+        1: "Initializing",
+        2: "Controlled Turning Off",
+        3: "Fault Turning Off",
+        4: "Stand-by",
+        5: "Limited Operation (Internal)",
+        6: "Limited Operation (External)",
+        7: "Backup Overload",
+        # Bits 8–10: only alert when bit is 0 (abnormal). Handled via invert_bits.
+        8: "Load Abnormal",
+        9: "Grid Abnormal",
+        10: "Battery Abnormal",
+        12: "Grid Surge (Warn)",
+        13: "Fan Fault (Warn)",
+    }, "invert_bits": {8, 9, 10}, "info_bits": {0, 1}},  # healthy/info — omit from alert line
 }
 ALERT_CATEGORIES: List[str] = sorted(list(set(v['category'] for v in SOLIS_FAULT_BITFIELD_MAPS.values())))
 

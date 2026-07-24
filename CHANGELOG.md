@@ -4,7 +4,42 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-24
+
 ### Added
+- **First-run console setup wizard** (`core/setup_wizard.py`, `core/plugin_catalog.py`)
+  - Runs when `config.ini` is missing/incomplete, or with `python main.py --setup`
+  - Selects inverter/BMS, writes `config.ini` (`setup_completed=true`), enables console dashboard by default
+- **New local-only inverter plugins (testing):** GoodWe, Sofar, Sungrow, Felicity (Modbus), Voltronic PI30
+- **New local-only BMS plugins (testing):** JBD/Xiaoxiang, Daly Smart BMS, Pylontech console RS485
+- **Shared Modbus inverter base** (`plugins/inverter/modbus_inverter_base.py`) built on `modbus_helper`
+- **Decoder unit tests** for JBD/Daly/Pylontech/Voltronic (`test_plugins/test_jbd_daly_decoders.py`)
+- **Multi-BMS capacity-weighted aggregation** (`core/bms_aggregator.py`)
+  - Combined SOC weighted by pack `full_ah`; summed Ah/power/current; mean pack voltage
+  - Publishes `bms_packs_list`, `bms_pack_count`, `bms_aggregation_mode`
+  - Web pack strip + BMS iframe pack selector; console per-pack rows; MQTT pack-count sensor
+  - Optional `PRIMARY_BMS_INSTANCE` for detail default (does not override combined SOC)
+- **Plugin capability metadata (`PLUGIN_META`)** on all inverter/BMS plugins with `get_plugin_meta()`
+- **Startup config validator** (`core/config_validator.py`): importable `plugin_type`, rejects known-bad types (e.g. `powmr_modbus_plugin`), connection-key checks
+- **Shared Modbus helper** (`plugins/modbus_helper.py`) with Solis as reference migration
+- **Broader web first-paint readiness** (inverter status, BMS SOC, or connected + static identity)
+- **Plugin health surface** in `shared_data` and UI (web Plugins panel + console age/fail lines)
+- **Firmware badges** on flow-board inverter/battery tiles
+- **Web UI density** cookie (`ui_density=comfortable|compact`) and console `FONT_SCALE=normal|large`
+- **Prometheus metrics service** (`services/metrics_service.py`, `[METRICS]`, default port `9108`)
+- **SQLite auto-vacuum / optimize** and optional `DAILY_SUMMARY_MAX_AGE_DAYS` prune
+- **Vendored offline dashboard assets** under `static/vendor/` + service worker precache
+- **HA discovery coverage test** (`test_plugins/test_ha_discovery_coverage.py`); AC power + lifetime energy sensors added
+- **Deye `deye_model_series=auto`** fingerprint probe; **Growatt `has_storage=auto`** storage-block probe
+- **Golden capture replay tests** (`test_plugins/test_capture_replay.py` + fixtures)
+
+### Fixed
+- **Solis working_status (33121) bit labels**: bits 8–10 are “is load/grid/battery normal?” (1=OK). They were shown as Load/Battery Failure; decoder now inverts those bits and uses corrected Appendix-6 names
+- Deye default series in example config is `auto`
+- Growatt storage block probing defaults toward `auto` session behavior
+- POWMR plugin type remains `inverter.powmr_rs232_plugin` (legacy `powmr_modbus_plugin` rejected by validator)
+
+### Added (prior)
 - **EG4 Modbus Plugin**: Complete plugin implementation for EG4 hybrid inverters
   - Dual connection support: Modbus TCP and Serial (RTU) connections
   - Support for EG4 inverter models with comprehensive register mapping

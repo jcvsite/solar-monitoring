@@ -20,9 +20,13 @@ This directory contains standalone test scripts for testing individual plugins w
 
 ### Plugin Validation Tools
 
-1. **`validate_all_plugins.py`** - Comprehensive validation of all plugins with detailed reporting
+1. **`validate_all_plugins.py`** - Comprehensive offline/online validation with detailed reporting
 2. **`quick_plugin_check.py`** - Fast health check for plugin loading and instantiation
 3. **`run_all_plugin_tests.py`** - Execute all individual plugin tests with comprehensive reporting
+4. **Unit / capture tests** (no hardware):
+   - `test_capture_replay.py` — sanitizer, JK CRC, Deye status, multi-BMS math
+   - `test_ha_discovery_coverage.py` — flow-board keys vs MQTT discovery
+   - `test_data_sanitizer_and_jk_decoder.py` — sanitizer + JK decoder
 
 ## Usage
 
@@ -65,6 +69,9 @@ The validation tools provide different levels of testing:
 ```bash
 # Quick health check (fast, no connections)
 python test_plugins/quick_plugin_check.py
+
+# Offline unit / capture / HA discovery tests
+python -m unittest test_plugins.test_capture_replay test_plugins.test_ha_discovery_coverage test_plugins.test_data_sanitizer_and_jk_decoder -v
 
 # Comprehensive validation (tests loading, connections, data)
 python test_plugins/validate_all_plugins.py
@@ -129,9 +136,11 @@ All test plugins now use a **centralized configuration loader** (`test_plugins/t
 - **Consistent behavior**: Same parsing logic as the main application
 
 ### ✅ **Plugin-Specific Support**
-- **POWMR RS232**: `powmr_protocol_version` parameter
-- **Deye/Sunsynk**: `deye_model_series` parameter  
+- **POWMR RS232**: `powmr_protocol_version` parameter (plugin type must be `powmr_rs232_plugin`, not legacy `powmr_modbus_plugin`)
+- **Deye/Sunsynk**: `deye_model_series` (`auto` | `modern_hybrid` | `legacy_hybrid` | `three_phase`)
+- **Growatt**: `has_storage` (`auto` | `true` | `false`) for optional block 1000+
 - **Seplos BMS**: All Seplos-specific connection parameters
+- **Multi-BMS**: `[BMS_AGGREGATION]` + optional `PRIMARY_BMS_INSTANCE`
 - **Universal parameters**: Modbus settings, timeouts, power ratings
 
 ### ✅ **Error Prevention**

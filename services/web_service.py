@@ -1,4 +1,21 @@
 # services/web_service.py
+"""
+Web Dashboard Service
+
+Flask + Flask-SocketIO service that serves the Solar Monitoring web UI, REST-ish
+chart endpoints, and live Socket.IO updates from shared application state.
+
+Features:
+- Dashboard and BMS templates with PWA/static assets
+- Live shared_data push via Socket.IO
+- Historical chart data from DatabaseService
+- UI density cookie and first-paint readiness helpers
+- Optional metrics/status surfaces for plugins
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO
 import eventlet
@@ -61,6 +78,15 @@ class WebService:
         def bms_view():
             """Serves the self-contained BMS viewer page."""
             return render_template('bms.html')
+
+        @self.app.route('/sw.js')
+        def service_worker():
+            """Serve the service worker from the site root so it can control '/'."""
+            response = send_from_directory(self.app.static_folder, 'sw.js')
+            response.headers['Content-Type'] = 'application/javascript; charset=utf-8'
+            response.headers['Service-Worker-Allowed'] = '/'
+            response.headers['Cache-Control'] = 'no-cache'
+            return response
 
         @self.app.route('/static/<path:path>')
         def send_static(path):
@@ -273,10 +299,37 @@ class WebService:
         Returns:
             True if data is ready for display, False otherwise
         """
-        if not data_snapshot: return False
-        inv_status = data_snapshot.get(StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT, {}).get("value", INIT_VAL)
-        pv_power = data_snapshot.get(StandardDataKeys.PV_TOTAL_DC_POWER_WATTS, {}).get("value", None)
-        return inv_status != INIT_VAL and pv_power is not None
+        if not data_snapshot:
+            return False
+
+        def _val(key, default=None):
+            entry = data_snapshot.get(key, {})
+            if isinstance(entry, dict):
+                return entry.get("value", default)
+            return entry if entry is not None else default
+
+        inv_status = _val(StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT, INIT_VAL)
+        pv_power = _val(StandardDataKeys.PV_TOTAL_DC_POWER_WATTS, None)
+        soc = _val(StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT, None)
+        model = _val(StandardDataKeys.STATIC_INVERTER_MODEL_NAME, None)
+        batt_model = _val(StandardDataKeys.STATIC_BATTERY_MODEL_NAME, None)
+
+        # Inverter path with real status (not Init) and PV key present (may be 0 at night).
+        if inv_status not in (None, INIT_VAL, "Init") and pv_power is not None:
+            return True
+        # BMS-only / overnight: SOC present
+        if isinstance(soc, (int, float)):
+            return True
+        # Connected with static identity
+        if model or batt_model:
+            return True
+        # Any plugin reporting connected
+        for key, entry in data_snapshot.items():
+            if isinstance(key, str) and key.endswith("_core_plugin_connection_status"):
+                status = entry.get("value") if isinstance(entry, dict) else entry
+                if isinstance(status, str) and status.lower() in ("connected", "online"):
+                    return True
+        return False
         
     def _prepare_web_payload(self, data_snapshot: dict) -> dict:
         """
@@ -295,7 +348,11 @@ class WebService:
         """
         payload = {}
         for key, data_dict in data_snapshot.items():
-            value = data_dict.get("value")
+            if isinstance(data_dict, dict) and "value" in data_dict:
+                value = data_dict.get("value")
+            else:
+                # Tolerate unexpected shapes so one bad key cannot blank the UI.
+                value = data_dict
             
             if "bms_cell_voltage_" in key or key == StandardDataKeys.BMS_CELL_VOLTAGE_DELTA_VOLTS:
                 payload[key] = format_value_web(value, precision=3)

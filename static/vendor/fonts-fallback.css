@@ -1,0 +1,13 @@
+﻿/* System font fallbacks when Google Fonts CDN is unavailable */
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Poppins'), local('Segoe UI');
+}
+@font-face {
+  font-family: 'Carlito';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Carlito'), local('Calibri'), local('Arial');
+}

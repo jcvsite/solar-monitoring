@@ -841,6 +841,15 @@ def get_configurable_params() -> List[Dict[str, Any]]:
 - Provide fallback values when appropriate
 - Maintain connection state properly
 
+### **6. Multi-BMS Aggregation Compatibility**
+- Publish accurate `BMS_FULL_CAPACITY_AH` / `BMS_REMAINING_CAPACITY_AH` when the protocol exposes them — these weight the combined SOC
+- Always set standard battery keys (`BATTERY_STATE_OF_CHARGE_PERCENT`, voltage, current, power, status)
+- Declare `PLUGIN_META` with `"category": "bms"`; runtime category is also stored for the aggregator
+- Per-pack UI/MQTT is instance-scoped; combined values overwrite the shared battery keys in the data processor
+
+### **7. Firmware for UI Badges**
+- Prefer populating `STATIC_BATTERY_FIRMWARE_VERSION` on static reads so the flow-board badge can display it
+
 ---
 
 ## 📚 **Additional Resources**
@@ -848,6 +857,8 @@ def get_configurable_params() -> List[Dict[str, Any]]:
 - **BMS Plugin Base**: `plugins/battery/bms_plugin_base.py`
 - **Standard Data Keys**: `plugins/plugin_interface.py` (StandardDataKeys enum)
 - **Plugin Utils**: `plugins/plugin_utils.py` (network checking utilities)
+- **Multi-BMS Aggregator**: `core/bms_aggregator.py`
+- **Data Sanitizer**: `core/data_sanitizer.py`
 - **Reference Implementation**: `plugins/battery/seplos_bms_v2_plugin.py`
 
 ---

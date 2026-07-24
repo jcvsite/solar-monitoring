@@ -1,4 +1,21 @@
 # services/data_filter_service.py
+"""
+Intelligent Data Filter Service
+
+Filters spike/glitch readings and applies time-based acceptance rules so bad
+sensor values do not corrupt shared state, history, or automations.
+
+Features:
+- Configurable FilterConfig thresholds and confirmation windows
+- Spike detection and intelligent decrease-correction logic
+- Cached limit lookups and tracking cleanup
+- Daily reset / state management helpers
+- Protects SOC, power, voltage, and related StandardDataKeys
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import logging
 import time
 from typing import Dict, Any, Optional, Tuple, Set

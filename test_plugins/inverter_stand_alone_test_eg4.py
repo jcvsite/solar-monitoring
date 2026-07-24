@@ -12,6 +12,8 @@ Instructions:
 Optional: You can override the config instance name by setting the environment variable:
    set INVERTER_INSTANCE_NAME=INV_EG4
    python inverter_stand_alone_test_eg4.py
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 import logging
 import time

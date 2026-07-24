@@ -12,6 +12,8 @@ Instructions:
 Optional: You can override the config instance name by setting the environment variable:
    set BMS_INSTANCE_NAME=BMS_JK
    python bms_stand_alone_test_jk.py
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 import logging
 import time

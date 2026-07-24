@@ -1,0 +1,16 @@
+services:
+  solar-monitoring:
+    build: .
+    container_name: solar-monitoring
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./config.ini:/app/config.ini:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Uncomment for serial device access (adjust path as needed):
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0

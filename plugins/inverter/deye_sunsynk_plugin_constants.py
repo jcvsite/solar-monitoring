@@ -1,3 +1,4 @@
+# plugins/inverter/deye_sunsynk_plugin_constants.py
 """
 Deye/SunSynk Modbus Constants and Register Definitions
 
@@ -30,17 +31,23 @@ License: MIT
 
 from plugins.plugin_interface import StandardDataKeys as StdKeys
 
+# Inverter Status Codes - Maps numeric status codes to human-readable text.
+# Nested per-series maps are kept separately so STATUS_CODES.get() never returns a dict.
+STATUS_CODES = {
+    0: "Waiting",
+    1: "Generating",
+    2: "Fault",
+    3: "Standby",
+}
+
+# Optional series-specific run-state nibble maps (used by decode helpers if needed)
+STATUS_CODES_SERIES_59 = {0: "Stand-by", 1: "Self-checking", 2: "Normal", 3: "FAULT"}
+STATUS_CODES_SERIES_LEGACY = {0: "Stand-by", 1: "Self-check", 2: "Normal", 3: "Warning", 4: "Fault"}
+
 # BMS Protocol Codes - Maps numeric codes to BMS manufacturer names
 BMS_PROTOCOL_CODES = {
     0: "Pylontech CAN", 1: "Sacred Sun RS485", 3: "Dyness CAN", 6: "GenixGreen RS485",
     12: "Pylon RS485", 13: "Vision CAN", 14: "Wattsonic RS485", 15: "Unipower RS485",
-}
-
-# Inverter Status Codes - Maps numeric status codes to human-readable text
-STATUS_CODES = {
-    0: 'Waiting', 1: 'Generating', 2: 'Fault', 3: 'Standby',
-    59: {0: "Stand-by", 1: "Self-checking", 2: "Normal", 3: "FAULT"},
-    3: {0: "Stand-by", 1: "Self-check", 2: "Normal", 3: "Warning", 4: "Fault"},
 }
 
 # Standard Modbus Exception Codes - Maps exception codes to descriptions

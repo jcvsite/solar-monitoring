@@ -1,0 +1,49 @@
+# Git / VCS
+.git
+.gitattributes
+.gitignore
+
+# Bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.cache
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# Local secrets and runtime data
+config.ini
+*.db
+*.db-journal
+*.log
+*.log.*
+*.lock
+*.pid
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+*.code-workspace
+
+# Docs / assets not needed in image
+screenshots/
+*.md
+!requirements.txt
+
+# Archives / temp
+*.rar
+*.zip
+*.tar.gz
+*.tmp
+*.temp
+temp/
+tmp/
+data/
+logs/

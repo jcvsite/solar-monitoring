@@ -1,4 +1,22 @@
 # plugins/plugin_utils.py
+"""
+Plugin Network Utility Helpers
+
+This module provides lightweight pre-connection checks used by inverter and BMS
+plugins before opening Modbus/serial protocol sessions.
+
+Features:
+- TCP port reachability check with latency measurement
+- ICMP ping helper across Windows/Linux/macOS
+- Optional logger injection for debug diagnostics
+
+Supported Consumers:
+- Modbus and serial plugins under plugins/inverter/ and plugins/battery/
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import time
 import socket
 import platform

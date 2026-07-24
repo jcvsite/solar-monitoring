@@ -1,4 +1,25 @@
 # plugins/plugin_interface.py
+"""
+Plugin Interface and Standard Data Keys
+
+This module defines the DevicePlugin abstract interface, configuration parsing
+helpers, and StandardDataKeys used by all inverter and BMS plugins in the
+Solar Monitoring Framework.
+
+Features:
+- DevicePlugin ABC (connect, disconnect, read_data, identity, config params)
+- StandardDataKeys unified metric naming across plugins
+- parse_config_int / parse_config_float / parse_config_str with inline-comment support
+- Shared conventions for PLUGIN_META capability metadata
+
+Supported Consumers:
+- All plugins under plugins/inverter/ and plugins/battery/
+- core/plugin_manager.py and related validation/catalog code
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple, Optional, Union, TYPE_CHECKING
 import logging # Use standard logging
@@ -283,6 +304,25 @@ class DevicePlugin(ABC):
         self.client: Optional[Any] = None # Plugin-specific client (e.g., Modbus client, serial port)
         self._is_connected_flag: bool = False # Common flag, managed by plugin's connect/disconnect
         self.connection_status: str = "Initializing"
+
+    @classmethod
+    def get_plugin_meta(cls) -> Dict[str, Any]:
+        """
+        Return capability metadata for tooling, validators, and UI health panels.
+
+        Concrete plugins should override this (or set PLUGIN_META on the class).
+        """
+        meta = getattr(cls, "PLUGIN_META", None)
+        if isinstance(meta, dict):
+            return dict(meta)
+        return {
+            "plugin_id": cls.__name__,
+            "category": "unknown",
+            "protocols": [],
+            "models": [],
+            "status": "testing",
+            "api_version": 1,
+        }
 
     @property
     @abstractmethod

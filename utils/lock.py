@@ -1,3 +1,19 @@
+# utils/lock.py
+"""
+Single-Instance Lock Helper
+
+Cross-platform lock file utilities that prevent multiple Solar Monitoring
+processes from running against the same working directory.
+
+Features:
+- Windows (msvcrt) and POSIX (fcntl) lock implementations
+- acquire_lock / cleanup_lock_file lifecycle helpers
+- atexit cleanup registration for graceful exits
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import os
 import sys
 import logging

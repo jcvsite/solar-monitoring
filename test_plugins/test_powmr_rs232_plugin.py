@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# test_plugins/test_powmr_rs232_plugin.py
 """
 Standalone test suite for the POWMR RS232 Plugin.
 
@@ -11,10 +12,11 @@ This test file validates the POWMR RS232 plugin functionality including:
 - Alert/fault code processing
 - Temperature decoding
 
-GitHub: https://github.com/jcvsite/solar-monitoring
+GitHub Project: https://github.com/jcvsite/solar-monitoring
 
 Usage:
     python test_plugins/test_powmr_rs232_plugin.py
+License: MIT
 """
 
 import sys

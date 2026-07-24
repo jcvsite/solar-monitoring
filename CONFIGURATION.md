@@ -6,15 +6,23 @@ This guide covers all configuration options for the Solar Monitoring Framework, 
 
 - [Quick Start](#quick-start)
 - [Configuration File Structure](#configuration-file-structure)
-- [General Settings](#general-settings)
+- [General Settings](#general-settings) (includes `[BMS_AGGREGATION]`)
 - [System Configuration](#system-configuration)
-- [Plugin Configuration](#plugin-configuration)
-- [Service Configuration](#service-configuration)
+- [Plugin Configuration](#plugin-configuration) (Deye `auto`, Growatt `has_storage`)
+- [Service Configuration](#service-configuration) (MQTT HA coverage, Database vacuum, Console `FONT_SCALE`, Metrics)
 - [Advanced Configuration](#advanced-configuration)
 - [Troubleshooting](#troubleshooting)
 
 ## Quick Start
 
+**Option A — Console wizard (recommended for first run):**
+```bash
+python main.py
+# or force re-run: python main.py --setup
+```
+If `config.ini` is missing or has no `PLUGIN_INSTANCES`, the wizard asks for inverter/BMS, connection details, timezone (default `Asia/Manila`), and writes `config.ini` with `setup_completed=true`.
+
+**Option B — Manual copy:**
 1. **Copy Example Configuration**:
    ```bash
    cp config.ini.example config.ini
@@ -37,11 +45,14 @@ The `config.ini` file is organized into logical sections:
 ```ini
 [GENERAL]                    # Core application settings
 [INVERTER_SYSTEM]           # Physical system specifications
+[BMS_AGGREGATION]           # Multi-BMS pack aggregation mode
 [PLUGIN_*]                  # Individual plugin configurations
 [LOGGING]                   # Logging configuration
 [MQTT]                      # MQTT/Home Assistant integration
 [WEB_DASHBOARD]             # Web interface settings
-[DATABASE]                  # Data storage settings
+[CONSOLE_DASHBOARD]         # Terminal UI (FONT_SCALE)
+[DATABASE]                  # Data storage, retention, vacuum
+[METRICS]                   # Optional Prometheus exporter
 [FILTER]                    # Data filtering and validation
 # ... additional service sections
 ```
@@ -66,6 +77,10 @@ CHECK_FOR_UPDATES = true
 
 # Maximum reconnection attempts
 MAX_RECONNECT_ATTEMPTS = 5
+
+# Optional: prefer this BMS instance for pack-detail default selection
+# (aggregation still combines all BMS packs for the main battery tile)
+# PRIMARY_BMS_INSTANCE = BMS_Seplos_v2
 ```
 
 #### Key Parameters
@@ -76,6 +91,27 @@ MAX_RECONNECT_ATTEMPTS = 5
 | `POLL_INTERVAL` | Data polling frequency (seconds) | 5 | `5`, `10`, `30` |
 | `LOCAL_TIMEZONE` | IANA timezone identifier | UTC | `Europe/London`, `America/New_York` |
 | `CHECK_FOR_UPDATES` | Enable update checking | true | `true`, `false` |
+| `PRIMARY_BMS_INSTANCE` | Default BMS for detail views | first BMS | `BMS_Seplos_v2` |
+
+### `[BMS_AGGREGATION]` Section
+
+When multiple BMS plugins are loaded, packs are combined for the main battery tile:
+
+```ini
+[BMS_AGGREGATION]
+# capacity_weighted: SOC weighted by pack full_ah; power/current/Ah summed; voltage averaged
+bms_aggregation_mode = capacity_weighted
+```
+
+| Behavior | Detail |
+|----------|--------|
+| Combined SOC | `sum(soc_i * full_ah_i) / sum(full_ah)` (equal-weight fallback) |
+| Power / current / Ah | Summed across packs |
+| Voltage | Mean of packs reporting voltage |
+| UI | Flow board = combined; BMS page + console = per-pack |
+| Published keys | `bms_packs_list`, `bms_pack_count`, `bms_aggregation_mode` |
+
+Startup also runs **config schema validation** (`core/config_validator.py`): `plugin_type` must import a `DevicePlugin`, known-bad types (e.g. `inverter.powmr_modbus_plugin`) are rejected, and connection keys are checked. Fix errors before the process will start.
 
 ## System Configuration
 
@@ -217,14 +253,33 @@ tcp_host = 192.168.1.100
 tcp_port = 8899
 slave_address = 1
 
-# CRITICAL: Model series selection
-# Options: modern_hybrid, legacy_hybrid, three_phase
-deye_model_series = modern_hybrid
+# CRITICAL: Model series selection (or auto-detect)
+# Options: auto, modern_hybrid, legacy_hybrid, three_phase
+# auto probes fingerprint registers on connect and caches the chosen map
+deye_model_series = auto
 
 # Optional: Advanced settings
 # modbus_timeout_seconds = 10
 # inter_read_delay_ms = 750
 # max_regs_per_read = 100
+```
+
+#### Growatt Modbus Plugin
+
+```ini
+[PLUGIN_INV_Growatt]
+plugin_type = inverter.growatt_modbus_plugin
+
+connection_type = tcp
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 1
+
+# Storage/hybrid input block 1000+:
+#   auto  - probe once; disable for session on illegal address
+#   true  - always attempt storage block
+#   false - skip storage block (grid-tie only)
+has_storage = auto
 ```
 
 ### BMS Plugins
@@ -296,6 +351,21 @@ baud_rate = 115200
 slave_address = 1
 ```
 
+#### New local plugins (PH expansion, testing)
+
+| plugin_type | Notes |
+| :--- | :--- |
+| `inverter.goodwe_modbus_plugin` | EH/ET Modbus; optional `goodwe_map=auto\|et\|eh` |
+| `inverter.sofar_modbus_plugin` | HYD/G3; optional `sofar_series=auto\|hyd\|g3` |
+| `inverter.sungrow_modbus_plugin` | SH hybrid input/holding registers |
+| `inverter.felicity_modbus_plugin` | T-REX / Growatt-like holding map |
+| `inverter.voltronic_pi_plugin` | PI30 (`QPIGS`); default baud **2400** |
+| `battery.jbd_bms_plugin` | JBD/Xiaoxiang UART @ 9600 |
+| `battery.daly_bms_plugin` | Daly Smart BMS UART @ 9600 |
+| `battery.pylontech_bms_plugin` | Console RS485 @ 115200; many installs use inverter SOC instead |
+
+See example sections in `config.ini.example`.
+
 ## Service Configuration
 
 ### Logging
@@ -335,6 +405,8 @@ HA_DISCOVERY_PREFIX = homeassistant
 MQTT_STALE_DATA_TIMEOUT_SECONDS = 900
 ```
 
+**HA discovery coverage:** Flow-board power/SOC/daily-energy keys (including `ac_power_watts`) are published with units and `device_class`. Intentional omissions: raw per-cell voltage lists, weather fields, UI-only `display_*` helpers, plugin `*_health_*` keys, and `bms_packs_list` JSON (use instance BMS sensors plus `bms_pack_count`).
+
 ### Web Dashboard
 
 ```ini
@@ -362,7 +434,7 @@ FLASK_SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_STRING"
 # SQLite database file
 DB_FILE = solis_history.db
 
-# Data retention (hours)
+# Data retention for power_history (hours)
 HISTORY_MAX_AGE_HOURS = 720
 
 # Snapshot interval (seconds)
@@ -370,6 +442,13 @@ POWER_HISTORY_INTERVAL_SECONDS = 60
 
 # Power threshold for calculations
 HOURLY_SUMMARY_POWER_THRESHOLD_W = 2.0
+
+# Periodic VACUUM / PRAGMA optimize (hours). Default weekly.
+ENABLE_AUTO_VACUUM = true
+VACUUM_INTERVAL_HOURS = 168
+
+# 0 = keep daily_summary forever; otherwise prune rows older than N days
+DAILY_SUMMARY_MAX_AGE_DAYS = 0
 ```
 
 ### Console Dashboard
@@ -381,7 +460,29 @@ ENABLE_DASHBOARD = True
 
 # Update frequency
 DASHBOARD_UPDATE_INTERVAL = 1
+
+# normal | large — large uses tighter columns and fewer decimals
+# (curses cannot change the terminal font)
+FONT_SCALE = normal
 ```
+
+### Prometheus Metrics
+
+```ini
+[METRICS]
+# Lightweight Prometheus text exposition on /metrics
+ENABLE_PROMETHEUS = false
+PROMETHEUS_PORT = 9108
+```
+
+Gauges include PV/load/grid/battery power, SOC, per-plugin connected (0/1), poll age, consecutive failures, and process uptime.
+
+### Web Dashboard Notes
+
+- Theme toggle and **Compact/Comfortable** density toggle (`ui_density` cookie)
+- Firmware badges when `static_inverter_firmware_version` / BMS firmware keys are present
+- Secondary **BMS Packs** strip and **Plugins** health panel below the flow board
+- Frontend libraries are served from `/static/vendor/` for offline/PWA use
 
 ### Weather Widget
 
@@ -392,8 +493,8 @@ ENABLE_WEATHER_WIDGET = True
 
 # Location settings
 WEATHER_USE_AUTOMATIC_LOCATION = False
-WEATHER_DEFAULT_LATITUDE = 40.7128
-WEATHER_DEFAULT_LONGITUDE = -74.0060
+WEATHER_DEFAULT_LATITUDE = 16.6167
+WEATHER_DEFAULT_LONGITUDE = 120.3166
 
 # Display settings
 WEATHER_TEMPERATURE_UNIT = celsius

@@ -1,4 +1,21 @@
 # core/plugin_manager.py
+"""
+Plugin Manager
+
+Loads configured device plugins, runs per-instance poll threads, and monitors
+health with watchdog/reinit logic for the Solar Monitoring Framework.
+
+Features:
+- Dynamic DevicePlugin instantiation by plugin_type
+- One polling thread per configured device instance
+- Watchdog and thread health monitors
+- Stagnation detection and optional script restart
+- Primary BMS instance selection helpers
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import logging
 import threading
 import time
@@ -8,6 +25,7 @@ from typing import Dict, Any, Optional, List, Tuple
 
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys
 from core.app_state import AppState
+from core.data_sanitizer import is_successful_dynamic_read, sanitize_plugin_data
 from utils.helpers import (
     trigger_script_restart, STATUS_CONNECTED, STATUS_DISCONNECTED, STATUS_ERROR,
     STATUS_INITIALIZING, FULLY_OPERATIONAL_STATUSES
@@ -55,21 +73,20 @@ def _check_for_data_stagnation(
 
 def get_primary_bms_instance_id(app_state: AppState) -> Optional[str]:
     """
-    Finds the instance ID of the first configured BMS plugin.
+    Finds the instance ID of the configured primary BMS, or the first BMS plugin.
 
-    This function iterates through the active plugin instances in the application state
-    and checks each plugin's configuration for a device category of "bms". It returns
-    the instance ID of the first plugin found with this category, indicating the
-    primary battery management system (BMS) in use.
-
-    Parameters:
-        app_state (AppState): The application state object containing information
-                              about active plugin instances and their configurations.
-
-    Returns:
-        Optional[str]: The instance ID (string) of the primary BMS plugin if found,
-                       otherwise None.
+    Prefer [GENERAL] PRIMARY_BMS_INSTANCE when set and present; otherwise first BMS.
     """
+    preferred = None
+    if app_state.config:
+        preferred = app_state.config.get("GENERAL", "PRIMARY_BMS_INSTANCE", fallback=None)
+        if preferred:
+            preferred = str(preferred).split(";")[0].strip()
+            if preferred in app_state.active_plugin_instances:
+                plugin = app_state.active_plugin_instances[preferred]
+                if plugin.plugin_config.get("_runtime_device_category") == "bms":
+                    return preferred
+
     for instance_id, plugin in app_state.active_plugin_instances.items():
         if plugin.plugin_config.get("_runtime_device_category") == "bms":
             return instance_id
@@ -128,7 +145,21 @@ def load_plugin_instance(plugin_type_full: str, instance_name: str, app_state: A
         plugin_config["_plugin_category_from_type_string"] = category
         
         logger.info(f"Instantiating plugin '{instance_name}' (Class: {found_class.__name__})")
-        return found_class(instance_name=instance_name, plugin_specific_config=plugin_config, main_logger=logger, app_state=app_state)
+        instance = found_class(instance_name=instance_name, plugin_specific_config=plugin_config, main_logger=logger, app_state=app_state)
+        try:
+            meta = found_class.get_plugin_meta()
+            instance.plugin_config["_plugin_meta"] = meta
+            logger.info(
+                "Plugin '%s' meta: id=%s category=%s status=%s protocols=%s",
+                instance_name,
+                meta.get("plugin_id"),
+                meta.get("category"),
+                meta.get("status"),
+                meta.get("protocols"),
+            )
+        except Exception as e:
+            logger.debug("Could not attach plugin meta for '%s': %s", instance_name, e)
+        return instance
 
     except ImportError as e:
         logger.error(f"Cannot import plugin module for type '{plugin_type_full}': {e}", exc_info=True)
@@ -226,9 +257,10 @@ def poll_single_plugin_instance_thread(instance_id: str, app_state: AppState, da
             
             # --- Data Polling ---
             is_this_cycle_truly_successful = False
+            dynamic_data = None
+            final_data_for_global = {}
 
             if plugin_inst.is_connected:
-                final_data_for_global = {}
 
                 if not static_data_read_success:
                     static_data = plugin_inst.read_static_data()
@@ -243,43 +275,55 @@ def poll_single_plugin_instance_thread(instance_id: str, app_state: AppState, da
                 final_data_for_global.update(local_static_data_cache)
                 
                 dynamic_data = plugin_inst.read_dynamic_data()
-                if dynamic_data is not None:
-                    is_this_cycle_truly_successful = True # Assume success initially
-                    final_data_for_global.update(dynamic_data)
+                # Empty {} must be treated as a failed read (some plugins returned {} on error).
+                if is_successful_dynamic_read(dynamic_data):
+                    sanitized = sanitize_plugin_data(dynamic_data, instance_id)
+                    if not sanitized:
+                        is_this_cycle_truly_successful = False
+                        plugin_inst.connection_status = STATUS_ERROR
+                        dynamic_data = None
+                        thread_logger.warning("Dynamic data read produced no usable fields after sanitization.")
+                    else:
+                        dynamic_data = sanitized
+                        is_this_cycle_truly_successful = True  # Assume success initially
+                        final_data_for_global.update(dynamic_data)
 
-                    # --- Stagnation Check (only for operational inverters) ---
-                    device_category = plugin_inst.plugin_config.get("_runtime_device_category", "unknown")
-                    if device_category == "inverter":
-                        inverter_status = final_data_for_global.get(StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT)
-                        if inverter_status in FULLY_OPERATIONAL_STATUSES:
-                            is_stagnant, stagnation_counter, last_power_flow_subset = _check_for_data_stagnation(
-                                final_data_for_global, last_power_flow_subset, stagnation_counter, stagnation_threshold, thread_logger
-                            )
-                            if is_stagnant:
-                                is_this_cycle_truly_successful = False
-                                plugin_inst.connection_status = "Stalled"
-                        else:
-                            # Not generating, so reset stagnation counter
-                            stagnation_counter = 0
-                            last_power_flow_subset = None
-                            # For watchdog purposes, "Waiting" is still a successful connection
-                            # Only mark as unsuccessful if there's an actual connection/communication problem
-                            waiting_states = ['waiting', 'standby', 'idle', 'off', 'sleep']
-                            if inverter_status and inverter_status.lower() in waiting_states:
-                                is_this_cycle_truly_successful = True  # Waiting is normal, not a failure
-                                thread_logger.debug(f"Inverter in normal waiting state ('{inverter_status}'). Marking as successful for watchdog.")
+                        # --- Stagnation Check (only for operational inverters) ---
+                        device_category = plugin_inst.plugin_config.get("_runtime_device_category", "unknown")
+                        if device_category == "inverter":
+                            inverter_status = final_data_for_global.get(StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT)
+                            if isinstance(inverter_status, str) and inverter_status in FULLY_OPERATIONAL_STATUSES:
+                                is_stagnant, stagnation_counter, last_power_flow_subset = _check_for_data_stagnation(
+                                    final_data_for_global, last_power_flow_subset, stagnation_counter, stagnation_threshold, thread_logger
+                                )
+                                if is_stagnant:
+                                    is_this_cycle_truly_successful = False
+                                    plugin_inst.connection_status = "Stalled"
                             else:
-                                is_this_cycle_truly_successful = False
-                                thread_logger.info(f"Inverter reported a non-generating status ('{inverter_status}'). Cycle not marked as successful for watchdog.")
+                                # Not generating, so reset stagnation counter
+                                stagnation_counter = 0
+                                last_power_flow_subset = None
+                                # For watchdog purposes, "Waiting" is still a successful connection
+                                waiting_states = ['waiting', 'standby', 'idle', 'off', 'sleep']
+                                status_l = inverter_status.lower() if isinstance(inverter_status, str) else ""
+                                if status_l in waiting_states or (isinstance(inverter_status, str) and inverter_status.startswith("Unknown")):
+                                    is_this_cycle_truly_successful = True
+                                    thread_logger.debug(f"Inverter in non-generating but valid state ('{inverter_status}'). Marking successful for watchdog.")
+                                else:
+                                    # Still treat as successful if we got a status string — avoid false stalls.
+                                    is_this_cycle_truly_successful = bool(inverter_status)
+                                    if not is_this_cycle_truly_successful:
+                                        thread_logger.info(f"Inverter reported unusable status ('{inverter_status}'). Cycle not marked successful for watchdog.")
                 
-                else: # dynamic_data is None, indicating a read failure
+                else: # dynamic_data is None or {}, indicating a read failure
                     is_this_cycle_truly_successful = False
                     plugin_inst.connection_status = STATUS_ERROR
-                    thread_logger.warning("Dynamic data read failed (plugin returned None).")
+                    dynamic_data = None
+                    thread_logger.warning("Dynamic data read failed (plugin returned None or empty dict).")
                 
             # --- Update global state based on cycle outcome ---
             # Separate MQTT availability from watchdog success criteria
-            data_was_read_successfully = (dynamic_data is not None and plugin_inst.is_connected)
+            data_was_read_successfully = (is_successful_dynamic_read(dynamic_data) and plugin_inst.is_connected)
             
             if is_this_cycle_truly_successful:
                 plugin_inst.connection_status = STATUS_CONNECTED

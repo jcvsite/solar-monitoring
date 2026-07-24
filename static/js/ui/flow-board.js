@@ -108,6 +108,7 @@ function cacheDOMElements() {
 	const invC = s.querySelector('.inverter-container');
 	if (invC) {
 		d.inverterBrandText = invC.querySelector('#flowBoard_inverter-brand-text');
+		d.inverterFwBadge = invC.querySelector('#flowBoard_inverter-fw-badge') || document.getElementById('flowBoard_inverter-fw-badge');
 		d.inverterTemp = invC.querySelector('.inverter-temp-text');
 		d.inverterVolts = invC.querySelector('.inverter-volts-text');
 		d.inverterAmps = invC.querySelector('.inverter-amps-text');
@@ -130,6 +131,7 @@ function cacheDOMElements() {
 	const battC = s.querySelector('.battery-container');
 	if (battC) {
 		d.batterySocPercentText = battC.querySelector('#flowBoard_battery-soc-percent .value-text');
+		d.batteryFwBadge = battC.querySelector('#flowBoard_battery-fw-badge') || document.getElementById('flowBoard_battery-fw-badge');
 		d.batteryKwhUp = battC.querySelector('.battery-kwh-up-text');
 		d.batteryKwhDown = battC.querySelector('.battery-kwh-down-text');
 		d.batteryVolts = battC.querySelector('.battery-volts-text');
@@ -393,18 +395,23 @@ export function startAnimationLoop(stateProvider) {
 }
 
 /**
- * Handles resizing of the flow board container by applying a CSS scale transform
- * to the main board element, ensuring it fits within its container.
+ * Handles resizing of the flow board container by scaling the design-size board
+ * to fit the available canvas, centered horizontally and vertically.
  */
 export function resizeFlowBoard() {
 	const s = document.querySelector('.energy-flow-board'),
 		c = document.querySelector('.energy-flow-diagram-container');
 	if (!s || !c) return;
 	const containerRect = c.getBoundingClientRect();
+	const DESIGN_W = 1513;
+	const DESIGN_H = 1080;
 	if (containerRect.width > 1 && containerRect.height > 1) {
-		let scaleFactor = Math.min(containerRect.width / 1513, containerRect.height / 1080);
+		let scaleFactor = Math.min(containerRect.width / DESIGN_W, containerRect.height / DESIGN_H);
 		if (scaleFactor < 0.01) scaleFactor = 0.01;
-		s.style.transform = `scale(${scaleFactor})`;
+		const offsetX = (containerRect.width - DESIGN_W * scaleFactor) / 2;
+		const offsetY = (containerRect.height - DESIGN_H * scaleFactor) / 2;
+		s.style.transformOrigin = 'top left';
+		s.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scaleFactor})`;
 		if (!s.style.opacity || s.style.opacity === '0') s.style.opacity = '1';
 	}
 }
@@ -488,9 +495,26 @@ export function updateFlowBoard(flowBoardData) {
 
 	if (d.grid) {
 		const p = d.grid.w ?? 0;
-		const isExporting = p > FLOW_THRESHOLD_W;
-		if (el.gridPowerBorder) el.gridPowerBorder.classList.toggle('exporting', isExporting);
-		if (el.gridPowerText) el.gridPowerText.classList.toggle('exporting', isExporting);
+		// flowBoardData.grid.w is negated vs SDK (positive SDK export → negative board w).
+		// After negation: positive board w = importing from grid, negative = exporting to grid.
+		const isImporting = p > FLOW_THRESHOLD_W;
+		const isExporting = p < -FLOW_THRESHOLD_W;
+		if (el.gridPowerBorder) {
+			el.gridPowerBorder.classList.toggle('importing', isImporting);
+			el.gridPowerBorder.classList.toggle('exporting', isExporting);
+		}
+		if (el.gridPowerText) {
+			el.gridPowerText.classList.toggle('importing', isImporting);
+			el.gridPowerText.classList.toggle('exporting', isExporting);
+		}
+		if (el.gridToInverterLineContainer) {
+			el.gridToInverterLineContainer.classList.toggle('importing', isImporting);
+			el.gridToInverterLineContainer.classList.toggle('exporting', isExporting);
+		}
+		if (el.gridToInverterLineContainer2) {
+			el.gridToInverterLineContainer2.classList.toggle('importing', isImporting);
+			el.gridToInverterLineContainer2.classList.toggle('exporting', isExporting);
+		}
 		updateElementText(el.gridPowerText, Math.abs(p), "W", 0);
 		updateElementText(el.gridKwhUp, "↑" + formatNum(d.grid.kwhUp, 2), "kWh");
 		updateElementText(el.gridKwhDown, "↓" + formatNum(d.grid.kwhDown, 2), "kWh");
@@ -500,13 +524,23 @@ export function updateFlowBoard(flowBoardData) {
 
 	if (d.inverter) {
 		updateElementText(el.inverterBrandText, d.inverter.brand, "", 1, "Inverter");
+		if (el.inverterFwBadge) {
+			const fw = d.inverter.firmware;
+			if (fw != null && String(fw).trim() !== '' && String(fw).toLowerCase() !== 'unknown') {
+				el.inverterFwBadge.textContent = `FW ${fw}`;
+				el.inverterFwBadge.style.display = '';
+			} else {
+				el.inverterFwBadge.textContent = '';
+				el.inverterFwBadge.style.display = 'none';
+			}
+		}
 		updateElementText(el.inverterTemp, d.inverter.temp, "°C", 1);
 		updateElementText(el.inverterVolts, d.inverter.volts, " V", 1);
 		updateElementText(el.inverterAmps, d.inverter.amps, " A", 1);
 		updateElementText(el.inverterHz, d.inverter.hz, " Hz", 1);
 
 		// Handle "No Grid" status display with duration tracking
-		const inverterStatus = (d.inverter.statusText || "").toLowerCase().trim();
+		const inverterStatus = String(d.inverter.statusText || "").toLowerCase().trim();
 		const isNoGrid = inverterStatus.includes('no grid');
 
 		// Track "No Grid" duration
@@ -591,7 +625,7 @@ export function updateFlowBoard(flowBoardData) {
 		if (el.inverterFanWrapper) { el.inverterFanWrapper.title = `FAN: ${fanStat || 'N/A'}`; }
 
 		const faultLights = [el.faultLight1, el.faultLight2, el.faultLight3, el.faultLight4];
-		const invStatusText = (d.inverter.statusText || "").toLowerCase().trim();
+		const invStatusText = String(d.inverter.statusText || "").toLowerCase().trim();
 		let invColor = faultColors.unknown; let invTitle = `Inverter Status: ${d.inverter.statusText || 'Unknown'}`;
 		if (['generating', 'ok', 'normal', 'running'].some(kw => invStatusText.includes(kw))) {
 			invColor = faultColors.good;
@@ -640,6 +674,16 @@ export function updateFlowBoard(flowBoardData) {
 	if (d.battery) {
 		const p = parseFloat(d.battery.power) ?? 0;
 		const soc = parseFloat(d.battery.soc) ?? 0;
+		if (el.batteryFwBadge) {
+			const fw = d.battery.firmware;
+			if (fw != null && String(fw).trim() !== '' && String(fw).toLowerCase() !== 'unknown') {
+				el.batteryFwBadge.textContent = `FW ${fw}`;
+				el.batteryFwBadge.style.display = '';
+			} else {
+				el.batteryFwBadge.textContent = '';
+				el.batteryFwBadge.style.display = 'none';
+			}
+		}
 		
 
 		

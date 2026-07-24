@@ -165,6 +165,14 @@ class ConnectionType(str, Enum):
 
 
 class PowmrCustomRs232Plugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "powmr_rs232",
+        "category": "inverter",
+        "protocols": ["inv8851_rs232", "tcp_tunnel"],
+        "models": ["POWMR 4500W", "POWMR 6000W"],
+        "status": "testing",
+        "api_version": 1,
+    }
     """
     POWMR RS232 Inverter Plugin using native inv8851 protocol.
     

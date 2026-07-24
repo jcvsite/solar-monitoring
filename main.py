@@ -1,15 +1,22 @@
+# main.py
 """
-Main entry point for the Solar Monitoring application.
+Main Entry Point — Solar Monitoring Framework
 
-This script orchestrates the entire application lifecycle:
-- Initializes the eventlet monkey patch for async operations.
-- Sets up logging.
-- Loads configuration and validates it.
-- Prevents multiple instances from running using a lock file.
-- Initializes all core services (Database, MQTT, Web, etc.).
-- Dynamically loads and starts all configured plugins in separate threads.
-- Starts the data processor and watchdog threads.
-- Handles graceful shutdown on SIGINT/SIGTERM signals.
+This script orchestrates the entire application lifecycle for local solar/inverter
+and BMS monitoring with web, console, MQTT, and optional smart-plug automation.
+
+Features:
+- Eventlet monkey patch for async web operations
+- Logging setup (console and rotating file)
+- Configuration load/validation and optional first-run setup wizard
+- Single-instance lock to prevent duplicate processes
+- Core services: Database, MQTT, Web, Console, Tuya, Metrics, Data Filter
+- Dynamic plugin load and per-device polling threads
+- Data processor, watchdog, and thread health monitors
+- Graceful shutdown on SIGINT/SIGTERM
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 # Monkey patch standard libraries for eventlet compatibility.
@@ -43,11 +50,12 @@ from services.web_service import WebService
 from services.curses_service import CursesService
 from services.tuya_service import TuyaService
 from services.data_filter_service import DataFilterService
+from services.metrics_service import MetricsService
 from utils.lock import acquire_lock, cleanup_lock_file
 from utils.update_checker import check_for_updates_safe
 
 # Application version
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 
 
 def setup_logging(app_state: AppState):
@@ -120,6 +128,19 @@ if __name__ == "__main__":
     app_state = AppState(version=__version__)
     
     config_file = script_dir / CONFIG_FILE_NAME
+    force_setup = "--setup" in sys.argv or "-s" in sys.argv
+
+    # First-run / forced console wizard before loading an incomplete config
+    from core.setup_wizard import needs_setup, run_setup_wizard
+    if needs_setup(config_file, force=force_setup):
+        # Minimal console logging so wizard prompts are visible
+        if not logging.getLogger().handlers:
+            logging.basicConfig(level=logging.INFO, format="%(message)s")
+        print("Configuration setup required." if not force_setup else "Re-running setup wizard (--setup).")
+        if not run_setup_wizard(config_file):
+            print("Setup cancelled or incomplete. Exiting.")
+            sys.exit(1)
+
     load_configuration(config_file, app_state)
     
     setup_logging(app_state)
@@ -159,6 +180,7 @@ if __name__ == "__main__":
     app_state.curses_service = curses_service
     tuya_service = TuyaService(app_state)
     filter_service = DataFilterService(app_state)
+    metrics_service = MetricsService(app_state)
 
     # --- 4. Load Plugins ---
     logger.info("Loading configured plugins...")
@@ -220,6 +242,7 @@ if __name__ == "__main__":
     mqtt_service.start()
     web_service.start()
     curses_service.start()
+    metrics_service.start()
     
     for t in threads:
         t.start()
@@ -259,6 +282,9 @@ if __name__ == "__main__":
         
         logger.info("Stopping web service...")
         web_service.stop()
+
+        logger.info("Stopping metrics service...")
+        metrics_service.stop()
         
         # Wait for threads to finish
         logger.info("Waiting for threads to finish...")

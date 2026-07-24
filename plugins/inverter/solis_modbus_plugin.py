@@ -48,6 +48,7 @@ from .solis_modbus_plugin_constants import (
 )
 
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.modbus_helper import create_modbus_client, _call_with_slave_compat
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 from utils.helpers import FULLY_OPERATIONAL_STATUSES
 
@@ -77,6 +78,14 @@ class SolisModbusPlugin(DevicePlugin):
     It features dynamic parameter adjustment for TCP connections to optimize
     communication reliability based on network latency.
     """
+    PLUGIN_META = {
+        "plugin_id": "solis_modbus",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["S5", "S6", "RHI"],
+        "status": "stable",
+        "api_version": 1,
+    }
     @staticmethod
     def _plugin_decode_register(registers: List[int], info: Dict[str, Any], logger_instance: logging.Logger) -> Tuple[Any, Optional[str]]:
         """
@@ -120,35 +129,8 @@ class SolisModbusPlugin(DevicePlugin):
             return ERROR_DECODE, unit
 
     def _safe_modbus_read(self, read_func, start_addr: int, count: int):
-        """
-        Safely call modbus read functions with different parameter formats for version compatibility.
-        
-        Args:
-            read_func: The modbus read function (e.g., client.read_input_registers)
-            start_addr: Starting register address
-            count: Number of registers to read
-            
-        Returns:
-            The result from the modbus read function
-        """
-        # For pymodbus 3.6.2, try the correct API format
-        try:
-            # Try with slave parameter (this should work for 3.6.2)
-            return read_func(start_addr, count, slave=self.slave_address)
-        except TypeError:
-            try:
-                # Try with unit parameter
-                return read_func(start_addr, count, unit=self.slave_address)
-            except TypeError:
-                try:
-                    # Try keyword arguments
-                    return read_func(address=start_addr, count=count, slave=self.slave_address)
-                except TypeError:
-                    try:
-                        return read_func(address=start_addr, count=count, unit=self.slave_address)
-                    except TypeError:
-                        # Try without slave/unit (if set on client)
-                        return read_func(start_addr, count)
+        """Safely call modbus read functions via shared helper (unit=/slave= compat)."""
+        return _call_with_slave_compat(read_func, start_addr, count, slave=self.slave_address)
 
     @staticmethod
     def _plugin_get_register_count(reg_type: str, logger_instance: logging.Logger) -> int:
@@ -295,9 +277,19 @@ class SolisModbusPlugin(DevicePlugin):
         self.logger.info(f"SolisPlugin '{self.instance_name}': Attempting to connect via {self.connection_type.value}...")
         try:
             if self.connection_type == ConnectionType.SERIAL:
-                self.client = ModbusSerialClient(port=self.serial_port, baudrate=self.baud_rate, timeout=self.modbus_timeout_seconds)
+                self.client = create_modbus_client(
+                    "serial",
+                    serial_port=self.serial_port,
+                    baudrate=self.baud_rate,
+                    timeout=self.modbus_timeout_seconds,
+                )
             else: # TCP
-                self.client = ModbusTcpClient(host=self.tcp_host, port=self.tcp_port, timeout=self.modbus_timeout_seconds)
+                self.client = create_modbus_client(
+                    "tcp",
+                    host=self.tcp_host,
+                    port=self.tcp_port,
+                    timeout=self.modbus_timeout_seconds,
+                )
             
             # Set slave address on client if supported (try different attributes)
             if hasattr(self.client, 'slave'):
@@ -354,16 +346,26 @@ class SolisModbusPlugin(DevicePlugin):
             if not map_info or not isinstance(reg_val, int): continue
             
             bit_map: Dict[int, str] = map_info.get("bits", {})
+            invert_bits = set(map_info.get("invert_bits") or [])
+            info_bits = set(map_info.get("info_bits") or [])
             category: str = map_info.get("category", "unknown_alert_category")
             if category not in categorized_alert_details:
                 categorized_alert_details[category] = []
 
             for bit_pos in range(16):
-                if (reg_val >> bit_pos) & 1:
-                    numeric_code = (reg_addr << 16) | bit_pos 
-                    active_alert_codes_numeric.append(numeric_code)
-                    alert_detail = bit_map.get(bit_pos, f"Unknown {category.capitalize()} Bit {bit_pos} (Reg {reg_addr})")
-                    categorized_alert_details[category].append(alert_detail)
+                bit_set = bool((reg_val >> bit_pos) & 1)
+                # invert_bits: Solis "is normal?" flags — alert when bit is 0
+                active = (not bit_set) if bit_pos in invert_bits else bit_set
+                if not active:
+                    continue
+                if bit_pos in info_bits:
+                    continue  # e.g. Normal Operation — not an alert
+                if bit_pos not in bit_map and bit_pos in invert_bits:
+                    continue
+                numeric_code = (reg_addr << 16) | bit_pos
+                active_alert_codes_numeric.append(numeric_code)
+                alert_detail = bit_map.get(bit_pos, f"Unknown {category.capitalize()} Bit {bit_pos} (Reg {reg_addr})")
+                categorized_alert_details[category].append(alert_detail)
         
         return active_alert_codes_numeric, categorized_alert_details
 
@@ -726,15 +728,19 @@ class SolisModbusPlugin(DevicePlugin):
 
         status_code = solis_raw_dynamic.get("current_status")
         if not isinstance(status_code, int):
-            self.logger.error(f"SolisPlugin '{self.instance_name}': Failed to decode status (got: '{status_code}'). Forcing disconnect.")
-            self.disconnect()
-            return None
+            # Do not disconnect on a single bad status decode — keep usable register data.
+            self.logger.warning(
+                f"SolisPlugin '{self.instance_name}': Unexpected status value '{status_code}'. "
+                "Continuing with Unknown status and available registers."
+            )
+            status_code = -1
 
         status_txt = SOLIS_INVERTER_STATUS_CODES.get(status_code, f"Unknown ({status_code})")
 
         if status_txt == "Waiting":
             self._waiting_status_counter += 1
-            max_waiting_polls = int(self.plugin_config.get("max_consecutive_waiting_polls", 5))
+            # Default raised: overnight Waiting is normal for hours; only reconnect on prolonged stalls.
+            max_waiting_polls = int(self.plugin_config.get("max_consecutive_waiting_polls", 120))
             self.logger.info(f"SolisPlugin '{self.instance_name}': Inverter status is 'Waiting'. Count: {self._waiting_status_counter}/{max_waiting_polls}. Preserving last known values.")
             if self._waiting_status_counter >= max_waiting_polls:
                 self.logger.warning(f"SolisPlugin '{self.instance_name}': Inverter stuck in 'Waiting' state for {max_waiting_polls} polls. Forcing reconnect.")

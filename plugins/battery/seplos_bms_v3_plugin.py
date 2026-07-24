@@ -1,4 +1,28 @@
 # plugins/battery/seplos_bms_v3_plugin.py
+"""
+Seplos BMS V3 Plugin
+
+This plugin communicates with Seplos V3 protocol BMS devices over Modbus TCP
+or Modbus RTU (serial). It reads pack telemetry from input registers and alarm
+status from coils, then standardizes values for the Solar Monitoring Framework.
+
+Features:
+- Dual connection support (Modbus TCP and Modbus RTU)
+- Pre-connection TCP port checks
+- Input-register map for pack voltage, current, SOC, SOH, and capacities
+- Up to 16 cell voltages and multiple temperature sensors
+- Coil-based alarm/status decoding (FET, protection, and warning events)
+- Standardized output via StandardDataKeys / DevicePlugin interface
+
+Supported Models:
+- Seplos BMS modules speaking Seplos protocol V3 (Modbus)
+- Compatible V3 packs exposed via Modbus TCP/RTU gateways
+
+Protocol Reference: Seplos BMS V3 Modbus Register Map
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import time
 import struct
 import logging
@@ -58,6 +82,14 @@ SEPLOS_V3_ALARMS = {
 }
 
 class SeplosBmsV3Plugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "seplos_bms_v3",
+        "category": "bms",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["Seplos V3"],
+        "status": "experimental",
+        "api_version": 1,
+    }
     """
     Plugin to communicate with Seplos V3 protocol BMS devices over Modbus.
 
@@ -272,7 +304,12 @@ class SeplosBmsV3Plugin(DevicePlugin):
                 if info['addr'] >= start_addr and info['addr'] < start_addr + count:
                     idx = info['addr'] - start_addr
                     raw_val = result.registers[idx]
-                    val = float(raw_val)
+                    if info.get("type") == "int16":
+                        if raw_val >= 0x8000:
+                            raw_val = raw_val - 0x10000
+                        val = float(raw_val)
+                    else:
+                        val = float(raw_val)
                     if "scale" in info: val *= info["scale"]
                     if "offset" in info: val += info["offset"]
                     decoded[key] = val

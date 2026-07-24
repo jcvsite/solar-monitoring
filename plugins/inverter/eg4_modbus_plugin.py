@@ -65,6 +65,14 @@ class ConnectionType(str, Enum):
     SERIAL = "serial"
 
 class Eg4ModbusPlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "eg4_modbus",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["6000XP", "12000XP", "18000XP"],
+        "status": "testing",
+        "api_version": 1,
+    }
     """
     A plugin to interact with EG4 inverters via Modbus TCP or RTU.
 
@@ -251,7 +259,7 @@ class Eg4ModbusPlugin(DevicePlugin):
         """
         if not self.is_connected:
             self.logger.error(f"EG4 Plugin '{self.instance_name}': Cannot read dynamic data, not connected.")
-            return {}
+            return None
             
         try:
             # Read input registers in 40-word chunks as per documentation
@@ -267,7 +275,7 @@ class Eg4ModbusPlugin(DevicePlugin):
             self.last_error_message = f"Communication error: {e}"
             self.logger.error(f"EG4 Plugin '{self.instance_name}': Failed to read dynamic data: {e}")
             self.disconnect()
-            return {}
+            return None
 
     def _read_registers_in_chunks(self, read_method, chunks: List[Tuple[int, int]]) -> Optional[Dict[int, int]]:
         """

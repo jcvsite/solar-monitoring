@@ -40,13 +40,18 @@ _Example graphs showing Tuya plug state and corresponding inverter temperature._
 -   **🔒 Privacy-First**: All data stays on your local network - no manufacturer servers involved
 -   **🧩 Plugin-Based Architecture:** Easily extendable to support new devices by creating new plugins. The framework handles the core logic of polling, data processing, and service integration.
 -   **📡 Multi-Device Support:** Concurrently poll multiple devices (e.g., an inverter and a separate BMS) each in its own managed thread.
+-   **🔋 Multi-BMS Aggregation:** Capacity-weighted SOC across packs; summed Ah/power/current; average pack voltage. Main battery tile shows the **combined** pack; BMS page and console show **per-pack** detail.
 -   **📊 Data Aggregation:** A central data processor intelligently merges data from all plugins into a unified system view.
 -   **🛡️ Intelligent Data Filtering:** Advanced time-based filtering system that automatically detects and prevents sensor errors, unit conversion issues, and communication glitches from corrupting your data.
+-   **🩺 Plugin Health Surface:** Live per-plugin connection age, failure counts, and status on web and console dashboards.
+-   **📈 Prometheus Metrics (Optional):** Lightweight `/metrics` exporter for PV/load/grid/battery power, SOC, and plugin health.
+-   **💾 SQLite Retention & Vacuum:** Configurable history prune plus optional periodic `VACUUM` / `PRAGMA optimize`.
+-   **📴 Offline-Capable Web UI:** Vendored frontend libraries under `static/vendor/` with service-worker precache (no CDN required).
 -   **🌡 Fan Automation:** Local Tuya device control for temperature-based fan automation and other smart home integrations.
--   **🏠 Home Automation Integration:** Optional MQTT integration with Home Assistant, OpenHAB, Domoticz, Node-RED, and other platforms.
--   **🌐 Dynamic Web Dashboard:** A powerful web interface providing a holistic view of your system.
+-   **🏠 Home Automation Integration:** Optional MQTT integration with Home Assistant, OpenHAB, Domoticz, Node-RED, and other platforms (HA discovery coverage audited for flow-board sensors).
+-   **🌐 Dynamic Web Dashboard:** Holistic system view with density toggle (comfortable/compact), firmware badges, and multi-pack BMS strip.
 -   **📅 Historical Data Logging:** Records detailed power flow and daily energy summaries to a local SQLite database for advanced analytics and chart generation.
--   **🛡️ System Stability:** A built-in watchdog monitors plugin threads, automatically attempting to re-initialize a failing plugin and triggering a full script restart if necessary.
+-   **🛡️ System Stability:** Watchdog + thread health monitor, config schema validation at startup, shared Modbus helper, and automatic recovery / full script restart when needed.
 
 ## 🔌 Available Plugins
 
@@ -56,16 +61,26 @@ _Example graphs showing Tuya plug state and corresponding inverter temperature._
 | `inverter.solis_modbus_plugin` | Ginlong/Solis S6 hybrid inverters (Modbus TCP/Serial) | ✅ Stable |
 | `inverter.luxpower_modbus_plugin` | LuxPower hybrid inverters (LXP-5K/12K/LB-5K) | ⚠️ Ready for Testing |
 | `inverter.eg4_modbus_plugin` | EG4 hybrid inverters (Modbus TCP/Serial) | ⚠️ Ready for Testing |
-| `inverter.growatt_modbus_plugin` | Growatt MIX/SPH hybrid inverters (Modbus TCP/Serial) | ⚠️ Ready for Testing |
+| `inverter.growatt_modbus_plugin` | Growatt MIX/SPH hybrid inverters (Modbus TCP/Serial; `has_storage=auto` probe) | ⚠️ Ready for Testing |
+| `inverter.goodwe_modbus_plugin` | GoodWe EH/ET hybrid (Modbus TCP/Serial, local) | 🧪 Needs Testers |
+| `inverter.sofar_modbus_plugin` | Sofar HYD/G3 hybrid (Modbus TCP/Serial, local) | 🧪 Needs Testers |
+| `inverter.sungrow_modbus_plugin` | Sungrow SH hybrid (Modbus TCP/Serial, local) | 🧪 Needs Testers |
+| `inverter.felicity_modbus_plugin` | Felicity T-REX / hybrid (Modbus TCP/Serial, local) | 🧪 Needs Testers |
+| `inverter.voltronic_pi_plugin` | Voltronic / Axpert / MPP Solar (PI30 serial/TCP) | 🧪 Needs Testers |
 | `inverter.srne_modbus_plugin` | SRNE solar charge controllers (Modbus TCP/Serial) | ⚠️ Ready for Testing |
 | `inverter.powmr_rs232_plugin` | POWMR hybrid inverters (native inv8851 protocol) | ⚠️ Ready for Testing |
-| `inverter.deye_sunsynk` | Deye/Sunsynk hybrid inverters (multiple models) | ⚠️ Ready for Testing |
+| `inverter.deye_sunsynk_plugin` | Deye/Sunsynk hybrid inverters (`deye_model_series=auto` fingerprint) | ⚠️ Ready for Testing |
 | **Battery Management** | | |
 | `battery.seplos_bms_v2_plugin` | Seplos BMS V2 protocol with cell monitoring | ✅ Stable |
 | `battery.seplos_bms_v3_plugin` | Seplos BMS V3 protocol (Modbus) | 🧪 Needs Testers |
-| `battery.jk_bms_plugin` | JK BMS devices (Modbus protocol) | 🧪 Needs Testers |
+| `battery.jk_bms_plugin` | JK BMS devices (UART JK02 protocol; optional Modbus V1.0) | 🧪 Needs Testers |
+| `battery.jbd_bms_plugin` | JBD / Xiaoxiang / Overkill BMS (UART) | 🧪 Needs Testers |
+| `battery.daly_bms_plugin` | Daly Smart BMS (UART/RS485) | 🧪 Needs Testers |
+| `battery.pylontech_bms_plugin` | Pylontech US-series console RS485 (or use inverter SOC) | 🧪 Needs Testers |
 
 See [CONFIGURATION.md](CONFIGURATION.md) for detailed plugin configuration examples.
+
+**First run:** if `config.ini` is missing or incomplete, a console setup wizard prompts for inverter/BMS selection and writes the file (`python main.py`, or `python main.py --setup` to re-run).
 
 ## 🚀 Installation & Setup
 
@@ -102,13 +117,15 @@ pip install -r requirements.txt
 cp config.ini.example config.ini
 # Edit config.ini with your device settings
 
-# 5. Test configuration
+# 5. Test configuration (offline validation + optional capture/HA tests)
 python test_plugins/validate_all_plugins.py --offline-only
+python -m unittest test_plugins.test_capture_replay test_plugins.test_ha_discovery_coverage -v
 
 # 6. Run the application
 python main.py
 ```
-Access your dashboard at `http://localhost:8081`
+Access your dashboard at `http://localhost:8081`  
+Optional Prometheus metrics (when enabled): `http://localhost:9108/metrics`
 
 ### Connection Methods
 
@@ -121,9 +138,11 @@ Access your dashboard at `http://localhost:8081`
 
 Detailed documentation is organized into separate guides:
 
-- **[CONFIGURATION.md](CONFIGURATION.md)** - Complete configuration options and examples
-- **[TESTING.md](TESTING.md)** - Plugin validation and testing tools
+- **[CONFIGURATION.md](CONFIGURATION.md)** - Complete configuration options and examples (incl. multi-BMS, metrics, vacuum, auto-detect)
+- **[TESTING.md](TESTING.md)** - Plugin validation, capture replay, and HA discovery tests
 - **[DEVELOPER.md](DEVELOPER.md)** - Plugin development and architecture guide
+- **[CHANGELOG.md](CHANGELOG.md)** - Release notes and unreleased changes
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 
 ### Plugin Development References
 

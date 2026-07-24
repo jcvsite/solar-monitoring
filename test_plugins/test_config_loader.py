@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
+# test_plugins/test_config_loader.py
 """
 Centralized configuration loader for test plugins.
 
 This module provides a unified way to load plugin configurations for standalone testing,
 using the same robust parsing logic as the main application's config_loader.py.
 
-GitHub: https://github.com/jcvsite/solar-monitoring
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 import os

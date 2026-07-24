@@ -11,26 +11,25 @@
     <meta name="apple-mobile-web-app-title" content="SolarDash">
     <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
 	
-    <!-- External Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/date-fns@4.1.0/cdn.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Local vendor libraries (offline-capable) -->
+    <script src="/static/vendor/socket.io.min.js"></script>
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script src="/static/vendor/date-fns.min.js"></script>
+    <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="/static/vendor/chartjs-plugin-datalabels.min.js"></script>
+	<script src="/static/vendor/chartjs-plugin-zoom.min.js"></script>
+    <link rel="stylesheet" href="/static/vendor/leaflet.css"/>
+    <script src="/static/vendor/leaflet.js"></script>
     <!-- Fonts & Local Stylesheet -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/vendor/fonts.css">
 	<link rel="icon" href="/static/icons/icon-192x192.png" type="image/png">
-    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css?v=14">
     <script>
         // Pass backend config to the frontend
         window.WEATHER_CONFIG = JSON.parse('{{ weather_config_json | safe }}');
     </script>
 </head>
-<body class="light"> 
+<body class="dark" data-theme="midnight"> 
     <!-- Weather SVG ICON SPRITE -->
     <svg style="position: absolute; width: 0; height: 0;" width="0" height="0" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
         <defs><filter id="blur" width="200%" height="200%"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dx="0" dy="4" result="offsetblur"/><feComponentTransfer><feFuncA type="linear" slope="0.05"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
@@ -48,11 +47,34 @@
         <symbol id="icon-sunrise" viewBox="0 0 24 24"><path fill="#FFD700" d="M20 16.59V13h-2v3.59l-1.7-1.7-1.42 1.42L18.5 21l3.62-3.68-1.42-1.42L18.5 18.29zM4 16.59l2.12-2.12-1.42-1.42L1 16.71l3.62 3.68 1.42-1.42zM12 6a6 6 0 00-4.47 10.29l.7-.7a5 5 0 017.54 0l.7.7A6 6 0 0012 6zm-8 4H2v2h2zm18 0h-2v2h2z"/></symbol>
         <symbol id="pv-yield-icon" viewBox="0 0 24 24"><g fill="#FFD700"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 20h6v-6h-6zm1-5h4v4h-4z"/><circle cx="12" cy="12" r="3" fill="#212121"/><path d="M12 9v4h2z"/></g></symbol>
     </svg>
-    <button id="mqttStatus" data-tooltip="Connecting..."> MQTT <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"> <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/> <path d="m15 5 3 3"/> </svg> <span id="mqtt-dot" class="status-dot"></span> </button>
-    <button id="themeToggle">Dark Mode</button>
-    <h1> <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sun-icon"> <circle cx="12" cy="12" r="5"></circle> <line x1="12" y1="1" x2="12" y2="3"></line> <line x1="12" y1="21" x2="12" y2="23"></line> <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line> <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line> <line x1="1" y1="12" x2="3" y2="12"></line> <line x1="21" y1="12" x2="23" y2="12"></line> <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line> <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line> </svg> Solar Dashboard </h1>
+    <div class="dash-header-bar">
+		<h1> <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sun-icon"> <circle cx="12" cy="12" r="5"></circle> <line x1="12" y1="1" x2="12" y2="3"></line> <line x1="12" y1="21" x2="12" y2="23"></line> <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line> <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line> <line x1="1" y1="12" x2="3" y2="12"></line> <line x1="21" y1="12" x2="23" y2="12"></line> <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line> <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line> </svg> Solar Dashboard </h1>
+		<div class="top-toolbar" id="top-toolbar">
+			<button id="densityToggle" type="button" title="Toggle UI density">Compact</button>
+			<button id="kioskToggle" type="button" title="Fullscreen kiosk mode">Kiosk</button>
+			<button id="settingsToggle" type="button" title="Dashboard settings">Settings</button>
+		</div>
+	</div>
+
+	<div id="alerts-banner" class="alerts-banner alerts-ok" aria-live="polite">
+		<div class="alerts-banner-main">
+			<span class="alerts-title">Alerts <span id="alerts-count" class="alerts-count">0</span></span>
+			<div id="alerts-active-list" class="alerts-active-list"></div>
+			<button type="button" id="alerts-toggle-history" class="alerts-history-btn" title="Recent alert history">History</button>
+		</div>
+		<div id="alerts-history" class="alerts-history">
+			<div id="alerts-history-list"></div>
+		</div>
+	</div>
+
+	<div id="mobile-summary" class="mobile-summary" aria-label="Mobile system summary"></div>
+
+	<section id="kpi-strip-section" class="kpi-strip-section" aria-label="Today at a glance">
+		<div id="kpi-strip" class="kpi-strip"></div>
+	</section>
 
     <div class="dashboard">
+		<div class="left-column-container">
 		<div class="section energy-flow-diagram-container">
             <button id="flowBoardRefreshBtn" class="flow-board-refresh-btn" title="Refresh Flow Board Data">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -115,6 +137,7 @@
                     <div class="inverter-container">
                         <div class="inverter-border"></div>
                         <div class="inverter-logo"> <svg viewBox="0 0 100 35"><rect width="100" height="35" rx="5"/><text id="flowBoard_inverter-brand-text" x="5" y="55%" dominant-baseline="middle" text-anchor="start" font-family="Carlito, Arial, sans-serif" font-weight="regular" font-size="30" fill="#F57C00">Inverter</text></svg> </div>
+                        <div class="firmware-badge" id="flowBoard_inverter-fw-badge" title="Inverter firmware"></div>
                         <div class="inverter-fault-1" id="flowBoard_fault-light-1"></div> <div class="inverter-fault-2" id="flowBoard_fault-light-2"></div> <div class="inverter-fault-3" id="flowBoard_fault-light-3"></div> <div class="inverter-fault-4" id="flowBoard_fault-light-4" title="Inverter Plugin Status"></div>
                         <div class="inverter-fan-icon"> <span id="flowBoard_inverterFanWrapper" title="FAN: Status Unknown"> <svg viewBox="0 0 100 100" fill="none"> <defs><linearGradient id="fanBladeGradient_themed" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" class="fan-blade-grad-stop1" /><stop offset="100%" class="fan-blade-grad-stop2" /></linearGradient></defs> <circle cx="50" cy="50" r="40" class="fan-case-fill fan-case-stroke" style="stroke-width:4"/> <path id="fanBlade1" d="M 50 50 L 80 40 Q 85 45 75 50 L 80 60 Q 85 55 50 50 Z" class="fan-center-fill"><animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="0.5s" repeatCount="indefinite"/></path> <path id="fanBlade2" d="M 50 50 L 80 40 Q 85 45 75 50 L 80 60 Q 85 55 50 50 Z" class="fan-center-fill" transform="rotate(120, 50, 50)"><animateTransform attributeName="transform" type="rotate" from="120 50 50" to="480 50 50" dur="0.5s" repeatCount="indefinite"/></path> <path id="fanBlade3" d="M 50 50 L 80 40 Q 85 45 75 50 L 80 60 Q 85 55 50 50 Z" class="fan-center-fill" transform="rotate(240, 50, 50)"><animateTransform attributeName="transform" type="rotate" from="240 50 50" to="600 50 50" dur="0.5s" repeatCount="indefinite"/></path> <circle cx="50" cy="50" r="12" class="fan-center-fill"/><circle cx="50" cy="50" r="42" fill="none" class="fan-outer-ring-stroke" style="stroke-width:2" stroke-dasharray="5 5"/> </svg> </span> </div>
                         <div class="inverter-temp-text" id="flowBoard_inverter-temp">0.0 °C</div> <div class="inverter-volts-text" id="flowBoard_inverter-volts">0.0 V</div> <div class="inverter-amps-text" id="flowBoard_inverter-amps">0.0 A</div> <div class="inverter-hz-text" id="flowBoard_inverter-hz">0 Hz</div>
@@ -123,6 +146,7 @@
                    <div class="battery-container">
                         <div class="battery-icon"> <svg class="battery-icon-svg" viewBox="0 0 40 98" preserveAspectRatio="xMidYMid meet"> <defs> <clipPath id="flowBoard_batteryLiquidClip"> <rect id="flowBoard_batteryClipRect" x="5" y="80" width="30" height="0" /> </clipPath> </defs> <rect x="2" y="5" width="36" height="95" rx="3" ry="3" class="battery-case"/> <rect x="10" y="-4" width="20" height="10" rx="1" ry="1" class="battery-terminal"/> <rect id="flowBoard_battery-fill-level" x="5" y="80" width="30" height="0" class="battery-fill"/> <g id="flowBoard_batteryBubblesGroup" clip-path="url(#flowBoard_batteryLiquidClip)"></g> </svg> </div>
                         <div class="battery-soc-text" id="flowBoard_battery-soc-percent"> <span class="value-text">0%</span> </div>
+                        <div class="firmware-badge battery-fw" id="flowBoard_battery-fw-badge" title="Battery firmware"></div>
                         <div class="battery-kwh-up-text" id="flowBoard_battery-kwh-up">↑0 kWh</div> <div class="battery-kwh-down-text" id="flowBoard_battery-kwh-down">↓0 kWh</div>
                         <div class="battery-details-box" id="flowBoard_battery-details-box"> <div class="battery-volts-text" id="flowBoard_battery-volts">0.0 V</div> <div class="battery-amps-text" id="flowBoard_battery-amps">0.0 A</div> <div class="battery-status-text" id="flowBoard_battery-status">Idle</div> </div>
 						<div class="bms-plugin-fault-indicator" id="flowBoard_bms-plugin-status-light" title="BMS Plugin Status"></div>
@@ -162,7 +186,16 @@
                     <div class="flow-indicator" id="flowBoard_pv4-to-total-flow-indicator" style="background-color: var(--flow-text-pv);"></div>
                 </div>
             </div>
-		</div> 
+		</div>
+
+		<div class="ops-status-bar" id="ops-status-bar">
+			<div class="section ops-status-card" id="bms-packs-section" style="display:none;">
+				<div class="section-header-title ops-status-title">BMS Packs</div>
+				<div id="bms-packs-strip" class="bms-packs-strip"></div>
+			</div>
+		</div>
+		</div><!-- /.left-column-container -->
+
          <div class="right-column-container">
             <div class="section" id="top-tab-section">
                 <!-- 1. The Header with tab buttons -->
@@ -203,32 +236,35 @@
                     </div>
                     <div id="weather-tab" class="tab-content">
                         <div class="weather-card">
-                            <!-- Left Panel -->
-                            <div class="weather-info">
-								<div class="weather-header">
-                                    <div class="datetime" id="datetime">Loading...</div>
-                                    <div class="location" id="location"></div>
-                                </div>                                <div class="current-weather-main">
-                                    <div class="weather-icon-container">
-                                        <svg id="main-weather-icon-svg"><use id="main-weather-icon" xlink:href="#cloudy"></use></svg>
+                            <div class="weather-main">
+                                <div class="weather-info">
+                                    <div class="weather-header">
+                                        <div class="datetime" id="datetime">Loading...</div>
+                                        <div class="location" id="location"></div>
                                     </div>
-                                    <div class="temp" id="temperature">--°C</div>
+                                    <div class="current-weather-main">
+                                        <div class="weather-icon-container">
+                                            <svg id="main-weather-icon-svg" viewBox="0 0 64 64"><use id="main-weather-icon" href="#cloudy" xlink:href="#cloudy"></use></svg>
+                                        </div>
+                                        <div class="current-weather-text">
+                                            <div class="temp" id="temperature">--°C</div>
+                                            <div class="weather-type" id="weather-type">--</div>
+                                        </div>
+                                    </div>
+                                    <div class="weather-details-grid">
+                                        <div class="detail-item"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-precipitation" xlink:href="#icon-precipitation"></use></svg><span id="precipitation">-- %</span></div>
+                                        <div class="detail-item right-icon"><span id="wind">-- km/h</span><svg class="icon" viewBox="0 0 64 64"><use href="#icon-wind" xlink:href="#icon-wind"></use></svg></div>
+                                        <div class="detail-item"><svg class="icon" viewBox="0 0 64 64"><use href="#cloudy" xlink:href="#cloudy"></use></svg><span id="cloud-cover">-- %</span></div>
+                                        <div class="detail-item right-icon"><span id="visibility">-- km</span><svg class="icon" viewBox="0 0 64 64"><use href="#icon-visibility" xlink:href="#icon-visibility"></use></svg></div>
+                                        <div class="detail-item"><svg class="icon" viewBox="0 0 64 64"><use href="#icon-sunrise" xlink:href="#icon-sunrise"></use></svg><span id="sunrise">--:-- AM</span></div>
+                                        <div class="detail-item right-icon"><span id="sunset">--:-- PM</span><svg class="icon" viewBox="0 0 64 64" style="transform: rotate(180deg);"><use href="#icon-sunrise" xlink:href="#icon-sunrise"></use></svg></div>
+                                    </div>
                                 </div>
-                                <div class="weather-type" id="weather-type">--</div>
-                                <div class="weather-details-grid">
-                                    <div class="detail-item"><svg class="icon"><use xlink:href="#icon-precipitation"></use></svg><span id="precipitation">-- %</span></div>
-                                    <div class="detail-item right-icon"><span id="wind">-- km/h</span><svg class="icon"><use xlink:href="#icon-wind"></use></svg></div>
-                                    <div class="detail-item"><svg class="icon"><use xlink:href="#cloudy"></use></svg><span id="cloud-cover">-- %</span></div>
-                                    <div class="detail-item right-icon"><span id="visibility">-- km</span><svg class="icon"><use xlink:href="#icon-visibility"></use></svg></div>
-                                    <div class="detail-item"><svg class="icon"><use xlink:href="#icon-sunrise"></use></svg><span id="sunrise">--:-- AM</span></div>
-                                    <div class="detail-item right-icon"><span id="sunset">--:-- PM</span><svg class="icon" style="transform: rotate(180deg);"><use xlink:href="#icon-sunrise"></use></svg></div>
+                                <div class="weather-map-container">
+                                    <div id="map"></div>
                                 </div>
-                                <div class="daily-forecast" id="daily-forecast-container"></div>
                             </div>
-                            <!-- Right Panel: Map -->
-                            <div class="weather-map-container">
-                                <div id="map"></div>
-                            </div>
+                            <div class="daily-forecast" id="daily-forecast-container" aria-label="5-day forecast"></div>
                         </div>
                     </div>
                 </div>
@@ -290,7 +326,7 @@
 				<!-- 2. The Content Area Wrapper (INSIDE the section) -->
 				<div class="tab-content-area">
 					<div id="bms-tab" class="tab-content">
-						<iframe id="bms-iframe" src="/bms" style="width: 100%; height: 100%; border: none;"></iframe>
+						<iframe id="bms-iframe" src="/bms?v=10" title="BMS"></iframe>
 					</div>
 					<div id="history-tab" class="tab-content active">
 						<div class="chart-container">
@@ -321,15 +357,100 @@
 	</div>
 	<footer>
 		<div class="footer-content">
-			<span class="footer-left"></span>
+			<span class="footer-left">
+				<button type="button" id="pluginHealthToggle" class="plugin-health-toggle" aria-expanded="false" title="Show plugin status">
+					<span class="plugin-health-toggle-dot" id="pluginHealthToggleDot"></span>
+					Plugins
+					<svg class="plugin-health-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+				</button>
+				<button type="button" id="mqttStatus" class="plugin-health-toggle mqtt-footer-btn" data-tooltip="MQTT status" title="MQTT connection status">
+					<span class="plugin-health-toggle-dot" id="mqtt-dot"></span>
+					<span class="mqtt-label">MQTT</span>
+					<span id="mqtt-status-text" class="mqtt-status-text">…</span>
+				</button>
+			</span>
 			<span class="footer-center">Solar Dashboard by <a href="https://github.com/jcvsite" target="_blank">JCV</a>
 			<span id="updateStatusMessage"></span>
 			</span>
-			<span id="lastUpdate">Last Update: Loading...</span>
-			<span id="connectionStatus" class="connection-status">●</span>
+			<span class="footer-right">
+				<span id="lastUpdate">Last Update: Loading...</span>
+				<span id="data-age" class="data-age" title="Seconds since last live data">—</span>
+				<span id="connectionStatus" class="connection-status">●</span>
+			</span>
 		</div>
 	</footer>
 
+	<div id="dash-settings-backdrop" class="dash-settings-backdrop" hidden></div>
+	<aside id="dash-settings-panel" class="dash-settings-panel" hidden aria-label="Dashboard settings">
+		<div class="dash-settings-header">
+			<strong>Dashboard Settings</strong>
+			<button type="button" id="dash-settings-close" title="Close">&times;</button>
+		</div>
+		<form id="dash-settings-form" class="dash-settings-form" onsubmit="return false;">
+			<fieldset>
+				<legend>Theme</legend>
+				<label class="theme-select-label">Appearance
+					<select id="setting-theme-select" title="Dashboard theme"></select>
+				</label>
+				<p class="settings-hint">Applies instantly and is saved for this browser.</p>
+			</fieldset>
+			<fieldset>
+				<legend>Show panels</legend>
+				<label><input type="checkbox" data-panel="kpi" checked> Today KPIs</label>
+				<label><input type="checkbox" data-panel="alerts" checked> Alerts</label>
+				<label><input type="checkbox" data-panel="flow" checked> Energy flow board</label>
+				<label><input type="checkbox" data-panel="weather" checked> Weather tab</label>
+				<label><input type="checkbox" data-panel="history" checked> History tab</label>
+				<label><input type="checkbox" data-panel="hourly" checked> Hourly tab</label>
+				<label><input type="checkbox" data-panel="bms" checked> BMS tab</label>
+				<label><input type="checkbox" data-panel="mqtt" checked> MQTT status</label>
+			</fieldset>
+			<fieldset>
+				<legend>Connection</legend>
+				<label>Stale after (seconds)
+					<input type="number" id="setting-stale-seconds" min="5" max="600" value="30">
+				</label>
+			</fieldset>
+			<fieldset>
+				<legend>Weather (this browser)</legend>
+				<label>Latitude <input type="number" step="any" id="setting-weather-lat" placeholder="16.6167"></label>
+				<label>Longitude <input type="number" step="any" id="setting-weather-lon" placeholder="120.3166"></label>
+				<label>Map zoom <input type="number" id="setting-weather-zoom" min="1" max="18" placeholder="5"></label>
+				<label>Temperature
+					<select id="setting-weather-unit">
+						<option value="celsius">Celsius</option>
+						<option value="fahrenheit">Fahrenheit</option>
+					</select>
+				</label>
+				<label><input type="checkbox" id="setting-weather-auto"> Use browser location</label>
+				<p class="settings-hint">Overrides apply in this browser only. Server <code>config.ini</code> is unchanged.</p>
+			</fieldset>
+			<div class="dash-settings-actions">
+				<button type="button" id="dash-settings-save" class="primary">Save</button>
+				<button type="button" id="dash-settings-reset">Reset</button>
+			</div>
+		</form>
+	</aside>
+
+	<div id="plugin-health-popover" class="plugin-health-popover" hidden>
+		<div class="plugin-health-popover-header">
+			<span>Plugin Status</span>
+			<button type="button" id="pluginHealthClose" class="plugin-health-close" title="Close">&times;</button>
+		</div>
+		<div id="plugin-health-body" class="plugin-health-body">
+			<div class="plugin-health-empty">Waiting for plugin health…</div>
+		</div>
+	</div>
+
     <script type="module" src="/static/js/app.js"></script>
+	<script>
+		if ('serviceWorker' in navigator) {
+			window.addEventListener('load', () => {
+				navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+					console.warn('Service worker registration failed:', err);
+				});
+			});
+		}
+	</script>
 </body>
 </html>

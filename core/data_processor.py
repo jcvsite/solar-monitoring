@@ -1,4 +1,21 @@
 # core/data_processor.py
+"""
+Data Processor Thread
+
+Consumes plugin payloads, sanitizes and merges them into a unified system view,
+applies multi-BMS aggregation, and dispatches updates to DB/Tuya/filter paths.
+
+Features:
+- Queue-driven merge of inverter and BMS plugin data
+- Data sanitization before consumer handoff
+- Capacity-weighted BMS aggregation hooks
+- Derived status and time-remaining calculations
+- Feeds historical logging and automation services
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import logging
 import queue
 import time
@@ -6,6 +23,8 @@ import time
 from typing import Dict, Any
 
 from core.app_state import AppState
+from core.bms_aggregator import apply_bms_aggregation, BMS_PACKS_LIST, BMS_PACK_COUNT
+from core.data_sanitizer import sanitize_plugin_data
 from core.plugin_manager import get_primary_bms_instance_id
 from plugins.plugin_interface import StandardDataKeys
 from utils.helpers import (
@@ -154,13 +173,33 @@ def process_and_merge_data(app_state: AppState, db_service: 'DatabaseService', t
 
         with app_state.data_lock:
             if plugin_data:
-                # Validate data quality before caching - don't cache null/empty/waiting states
-                if _is_data_meaningful(plugin_data, instance_id, logger):
-                    wrapped_data_packet = {key: {"value": value} for key, value in plugin_data.items()}
+                sanitized = sanitize_plugin_data(plugin_data, instance_id)
+                if not sanitized:
+                    logger.warning(f"DataProcessor: Sanitizer discarded payload for '{instance_id}'. Preserving last known data.")
+                elif _is_data_meaningful(sanitized, instance_id, logger):
+                    wrapped_data_packet = {key: {"value": value} for key, value in sanitized.items()}
                     app_state.per_plugin_data_cache[instance_id] = wrapped_data_packet
                     logger.debug(f"DataProcessor: Cached meaningful data for '{instance_id}'")
                 else:
-                    logger.info(f"DataProcessor: Received non-meaningful data for '{instance_id}' (waiting/null state). Preserving last known good data.")
+                    # Still cache waiting/idle packets so night-time SOC/status remain visible,
+                    # but only merge non-power fields onto last good cache when present.
+                    existing = app_state.per_plugin_data_cache.get(instance_id, {})
+                    wrapped = {key: {"value": value} for key, value in sanitized.items()}
+                    # Prefer updating status/SOC/static keys even in waiting states
+                    for key, value_dict in wrapped.items():
+                        if key.startswith("static_") or key in (
+                            StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT,
+                            StandardDataKeys.BATTERY_STATUS_TEXT,
+                            StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT,
+                            StandardDataKeys.BATTERY_VOLTAGE_VOLTS,
+                            StandardDataKeys.OPERATIONAL_CATEGORIZED_ALERTS_DICT,
+                            StandardDataKeys.BMS_CELL_VOLTAGES_LIST,
+                            StandardDataKeys.BMS_CELL_TEMPERATURES_LIST,
+                        ):
+                            existing[key] = value_dict
+                    if existing:
+                        app_state.per_plugin_data_cache[instance_id] = existing
+                    logger.info(f"DataProcessor: Received non-meaningful data for '{instance_id}' (waiting/null state). Merged safe fields into last known good data.")
             else:
                 # If a plugin fails to poll, we no longer clear its cache.
                 # We keep the last known good data to allow for graceful timeouts in consumer services.
@@ -189,6 +228,8 @@ def process_and_merge_data(app_state: AppState, db_service: 'DatabaseService', t
 
         # Flatten the merged data for the filter service, apply filters, then re-wrap.
         current_flat = {k: v.get('value') for k, v in merged_data.items()}
+        # Capacity-weighted multi-BMS aggregation into standard battery keys + packs list
+        current_flat = apply_bms_aggregation(app_state, per_plugin_cache_snapshot, current_flat)
         last_good_flat = {k: v.get('value') for k, v in last_good_merged_data.items()} if last_good_merged_data else {}
         filtered_flat = filter_service.apply_all_filters(current_flat, last_good_flat)
         
@@ -219,9 +260,22 @@ def process_and_merge_data(app_state: AppState, db_service: 'DatabaseService', t
         final_data_packet[StandardDataKeys.SERVER_TIMESTAMP_MS_UTC] = {"value": int(time.time() * 1000)}
         
         # Add individual plugin statuses, which are set by their respective poller threads
+        now_mono = time.monotonic()
         for instance_name, plugin in app_state.active_plugin_instances.items():
             status_key = f"{instance_name}_{StandardDataKeys.CORE_PLUGIN_CONNECTION_STATUS}"
             final_data_packet[status_key] = {"value": plugin.connection_status}
+
+            last_ok = app_state.last_successful_poll_timestamp_per_plugin.get(instance_name, 0.0)
+            age_s = (now_mono - last_ok) if last_ok else None
+            fails = app_state.plugin_consecutive_failures.get(instance_name, 0)
+            meta = plugin.plugin_config.get("_plugin_meta") or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            meta_status = meta.get("status") or getattr(plugin, "PLUGIN_META", {}).get("status", "unknown")
+            final_data_packet[f"{instance_name}_health_last_success_age_s"] = {"value": age_s}
+            final_data_packet[f"{instance_name}_health_consecutive_failures"] = {"value": fails}
+            final_data_packet[f"{instance_name}_health_connection_status"] = {"value": plugin.connection_status}
+            final_data_packet[f"{instance_name}_health_plugin_meta_status"] = {"value": meta_status}
 
         global_conn_status = _calculate_global_status(app_state)
         final_data_packet[StandardDataKeys.CORE_PLUGIN_CONNECTION_STATUS] = {"value": global_conn_status}
@@ -269,6 +323,17 @@ def _is_data_meaningful(plugin_data: dict, instance_id: str, logger) -> bool:
     """
     if not plugin_data:
         return False
+
+    # BMS-only packets are meaningful when SOC/voltage/cells are present even at idle.
+    device_category = plugin_data.get(StandardDataKeys.STATIC_DEVICE_CATEGORY)
+    if device_category == "bms":
+        soc = plugin_data.get(StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT)
+        voltage = plugin_data.get(StandardDataKeys.BATTERY_VOLTAGE_VOLTS)
+        cells = plugin_data.get(StandardDataKeys.BMS_CELL_VOLTAGES_LIST)
+        if isinstance(soc, (int, float)) or isinstance(voltage, (int, float)) or (
+            isinstance(cells, list) and cells
+        ):
+            return True
     
     # Check for common "waiting" or "null" state indicators
     inverter_status = plugin_data.get(StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT)

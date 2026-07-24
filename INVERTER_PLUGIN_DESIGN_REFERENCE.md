@@ -172,6 +172,15 @@ class ConnectionType(str, Enum):
 
 class YourInverterPlugin(DevicePlugin):
     """Plugin for [Your Inverter Brand] inverters via Modbus TCP/Serial."""
+
+    PLUGIN_META = {
+        "plugin_id": "your_inverter",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["ModelA", "ModelB"],
+        "status": "testing",
+        "api_version": 1,
+    }
     
     def __init__(self, instance_name: str, plugin_specific_config: Dict[str, Any], 
                  main_logger: logging.Logger, app_state: Optional['AppState'] = None):
@@ -666,6 +675,14 @@ def get_configurable_params() -> List[Dict[str, Any]]:
 - Use clear, descriptive method names
 - Document complex register mappings
 - Follow consistent coding patterns
+
+### **6. Shared Modbus Helper**
+- Prefer `plugins/modbus_helper.py` (`create_modbus_client`, `safe_read_holding` / `safe_read_input`) so `unit=` vs `slave=` differences across pymodbus versions stay isolated
+- Declare class-level `PLUGIN_META` for registry/health UI status
+
+### **7. Auto-detect Patterns (when useful)**
+- Deye-style series fingerprints: config `auto` + one-time probe on connect, keep explicit override
+- Growatt-style optional register blocks: `has_storage=auto` probe once and disable on illegal address for the session
 
 ---
 

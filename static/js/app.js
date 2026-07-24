@@ -33,8 +33,19 @@ import {
 import {
 	initWeather,
 	updateWeatherTheme,
-	handleMapResize
+	handleMapResize,
+	ensureWeatherStarted
 } from './ui/weather.js';
+import {
+	initDashboardChrome,
+	updateAlertsPanel,
+	updateKpiStrip,
+	markDataReceived,
+	updateDataAgeDisplay,
+	markBmsAvailable,
+	applyPanelVisibility,
+} from './ui/dashboard-chrome.js';
+import { getThemeById, resolveThemeId } from './ui/themes.js';
 
 // --- Socket.IO Connection ---
 const socket = io({
@@ -263,6 +274,7 @@ function renderDashboard(state) {
 		};
 		flowBoardData.inverter = {
 			brand: state[SDK.STATIC_INVERTER_MANUFACTURER],
+			firmware: state[SDK.STATIC_INVERTER_FIRMWARE_VERSION],
 			temp: state[SDK.OPERATIONAL_INVERTER_TEMPERATURE_CELSIUS],
 			volts: state[SDK.GRID_L1_VOLTAGE_VOLTS],
 			amps: state[SDK.GRID_L1_CURRENT_AMPS],
@@ -274,18 +286,34 @@ function renderDashboard(state) {
 		};
 		const batterySoc = state[SDK.BATTERY_STATE_OF_CHARGE_PERCENT] ?? 0;
 
-
+		// Resolve BMS plugin connection status dynamically (any configured BMS instance).
+		let bmsPluginConnectionStatus = null;
+		const statusSuffix = '_core_plugin_connection_status';
+		for (const key of Object.keys(state)) {
+			if (typeof key === 'string' && key.endsWith(statusSuffix)) {
+				const instanceId = key.slice(0, -statusSuffix.length);
+				const lower = instanceId.toLowerCase();
+				if (lower.includes('bms') || lower.includes('seplos') || lower.includes('jk') || lower.includes('battery')) {
+					bmsPluginConnectionStatus = state[key];
+					break;
+				}
+			}
+		}
+		if (bmsPluginConnectionStatus == null && SDK.BMS_PLUGIN_CONNECTION_STATUS_KEY_PATTERN) {
+			bmsPluginConnectionStatus = state[SDK.BMS_PLUGIN_CONNECTION_STATUS_KEY_PATTERN.replace('{instance_id}', 'BMS_Seplos_v2')];
+		}
 
 		flowBoardData.battery = {
 			power: state[SDK.BATTERY_POWER_WATTS] ?? 0,
 			soc: batterySoc,
+			firmware: state[SDK.STATIC_BATTERY_FIRMWARE_VERSION],
 			kwhUp: state[SDK.ENERGY_BATTERY_DAILY_CHARGE_KWH],
 			kwhDown: state[SDK.ENERGY_BATTERY_DAILY_DISCHARGE_KWH],
 			volts: state[SDK.BATTERY_VOLTAGE_VOLTS],
 			amps: state[SDK.BATTERY_CURRENT_AMPS],
 			statusText: state[SDK.BATTERY_STATUS_TEXT],
 			runtimeTextDisplay: state.display_battery_time_remaining,
-			bmsPluginConnectionStatus: state[SDK.BMS_PLUGIN_CONNECTION_STATUS_KEY_PATTERN.replace('{instance_id}', 'BMS_Seplos_v2')]
+			bmsPluginConnectionStatus
 		};
 
 		// Debug log the battery data being passed to flow board
@@ -301,7 +329,9 @@ function renderDashboard(state) {
 			gridExport = state[SDK.ENERGY_GRID_DAILY_EXPORT_KWH] ?? 0,
 			loadTotal = state[SDK.ENERGY_LOAD_DAILY_KWH] ?? 0;
 		const loadFromSolar = Math.max(0, pvDaily - battCharge - gridExport);
-		const pBLoad = loadTotal > 0.01 ? loadTotal : (loadFromSolar + battDischarge + gridImport);
+		// Daily sources can exceed load kWh (charge earlier, discharge later). Normalize % to source sum.
+		const loadSourceSum = loadFromSolar + battDischarge + gridImport;
+		const pBLoad = loadSourceSum > 0.01 ? loadSourceSum : (loadTotal > 0.01 ? loadTotal : 0);
 		flowBoardData.load = {
 			currentW: state[SDK.LOAD_TOTAL_POWER_WATTS] ?? 0,
 			totalEnergyConsumedToday: loadTotal,
@@ -322,13 +352,139 @@ function renderDashboard(state) {
 			percent_to_grid_export: pBProd > 0.01 ? (gridExport / pBProd) * 100 : 0
 		};
 		updateFlowBoard(flowBoardData);
+		updateBmsPacksStrip(state);
+		updatePluginHealthPanel(state);
+		updateAlertsPanel(state);
+		updateKpiStrip(state);
+		markDataReceived();
 		const lastUpdateEl = document.getElementById('lastUpdate');
 		if (lastUpdateEl && state.display_timestamp) {
 			lastUpdateEl.textContent = `Last Update: ${state.display_timestamp}`;
+			lastUpdateEl.dataset.baseStamp = state.display_timestamp;
+			lastUpdateEl.title = `Server time: ${state.display_timestamp}`;
 		}
+		updateDataAgeDisplay();
 	} catch (e) {
 		console.error("Error during dashboard rendering:", e);
 	}
+}
+
+function updateBmsPacksStrip(state) {
+	const section = document.getElementById('bms-packs-section');
+	const strip = document.getElementById('bms-packs-strip');
+	if (!section || !strip) return;
+	let packs = state[SDK.BMS_PACKS_LIST];
+	if (typeof packs === 'string') {
+		try { packs = JSON.parse(packs); } catch (e) { packs = null; }
+	}
+	// Single pack is already shown on the battery tile — only list multi-pack setups
+	if (!Array.isArray(packs) || packs.length < 2) {
+		section.style.display = 'none';
+		return;
+	}
+	section.style.display = '';
+	strip.innerHTML = packs.map(p => {
+		const id = (p && p.instance_id) ? p.instance_id : '?';
+		const soc = (p && p.soc != null && !isNaN(Number(p.soc))) ? Number(p.soc).toFixed(0) : '--';
+		const power = (p && p.power != null && !isNaN(Number(p.power))) ? Number(p.power).toFixed(0) : '--';
+		const status = (p && p.status) ? p.status : '';
+		return `<div class="bms-pack-chip"><strong>${id}</strong><span>${soc}%</span><span>${power} W</span><span>${status}</span></div>`;
+	}).join('');
+}
+
+function updatePluginHealthPanel(state) {
+	const body = document.getElementById('plugin-health-body');
+	const toggle = document.getElementById('pluginHealthToggle');
+	const dot = document.getElementById('pluginHealthToggleDot');
+	if (!body) return;
+
+	const rows = [];
+	let worst = 'ok';
+	for (const key of Object.keys(state)) {
+		if (!key.endsWith('_health_connection_status')) continue;
+		const instance = key.slice(0, -'_health_connection_status'.length);
+		const status = String(state[key] || 'unknown');
+		const age = state[`${instance}_health_last_success_age_s`];
+		const fails = state[`${instance}_health_consecutive_failures`];
+		const meta = state[`${instance}_health_plugin_meta_status`] || '';
+		let cls = 'health-ok';
+		const sl = status.toLowerCase();
+		if (sl.includes('error') || sl.includes('disconnect') || sl.includes('fail')) {
+			cls = 'health-bad';
+			worst = 'bad';
+		} else if ((sl.includes('connect') && !sl.includes('connected')) || sl.includes('stall') || (Number(fails) > 0)) {
+			cls = 'health-warn';
+			if (worst === 'ok') worst = 'warn';
+		}
+		const ageTxt = (age != null && age !== '' && !isNaN(Number(age))) ? `${Number(age).toFixed(0)}s` : '--';
+		rows.push(`<div class="plugin-health-row ${cls}"><span>${instance}</span><span>${status}</span><span>${ageTxt}</span><span>${fails ?? 0}</span><span>${meta}</span></div>`);
+	}
+
+	if (toggle) {
+		toggle.disabled = !rows.length;
+		toggle.classList.toggle('has-data', rows.length > 0);
+	}
+	if (dot) {
+		dot.classList.remove('good-dot', 'warning-dot', 'bad-dot');
+		if (!rows.length) {
+			/* leave neutral */
+		} else if (worst === 'bad') {
+			dot.classList.add('bad-dot');
+		} else if (worst === 'warn') {
+			dot.classList.add('warning-dot');
+		} else {
+			dot.classList.add('good-dot');
+		}
+	}
+
+	if (!rows.length) {
+		body.innerHTML = `<div class="plugin-health-empty">No plugin health data yet</div>`;
+		return;
+	}
+	body.innerHTML =
+		`<div class="plugin-health-row plugin-health-header"><span>Instance</span><span>Status</span><span>Age</span><span>Fail</span><span>Meta</span></div>` +
+		rows.join('');
+}
+
+function setPluginHealthPopoverOpen(open) {
+	const popover = document.getElementById('plugin-health-popover');
+	const toggle = document.getElementById('pluginHealthToggle');
+	if (!popover || !toggle) return;
+	if (open) {
+		popover.hidden = false;
+		toggle.setAttribute('aria-expanded', 'true');
+		toggle.classList.add('is-open');
+	} else {
+		popover.hidden = true;
+		toggle.setAttribute('aria-expanded', 'false');
+		toggle.classList.remove('is-open');
+	}
+}
+
+function initPluginHealthToggle() {
+	const toggle = document.getElementById('pluginHealthToggle');
+	const closeBtn = document.getElementById('pluginHealthClose');
+	const popover = document.getElementById('plugin-health-popover');
+	if (!toggle || !popover) return;
+
+	toggle.addEventListener('click', (e) => {
+		e.stopPropagation();
+		if (toggle.disabled) return;
+		const willOpen = popover.hidden;
+		setPluginHealthPopoverOpen(willOpen);
+	});
+	closeBtn?.addEventListener('click', (e) => {
+		e.stopPropagation();
+		setPluginHealthPopoverOpen(false);
+	});
+	document.addEventListener('click', (e) => {
+		if (popover.hidden) return;
+		if (popover.contains(e.target) || toggle.contains(e.target)) return;
+		setPluginHealthPopoverOpen(false);
+	});
+	document.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape') setPluginHealthPopoverOpen(false);
+	});
 }
 
 /**
@@ -339,7 +495,8 @@ function updateMqttStatusButton(status) {
 	const mqttButton = document.getElementById('mqttStatus');
 	if (!mqttButton) return;
 
-	const statusLower = String(status).toLowerCase();
+	const statusText = String(status ?? 'Unknown');
+	const statusLower = statusText.toLowerCase();
 
 	if (statusLower === 'disabled') {
 		mqttButton.style.display = 'none';
@@ -349,21 +506,29 @@ function updateMqttStatusButton(status) {
 	mqttButton.style.display = 'inline-flex';
 
 	const dot = document.getElementById('mqtt-dot');
-	mqttButton.dataset.tooltip = `MQTT: ${status}`;
+	const textEl = document.getElementById('mqtt-status-text');
+	mqttButton.dataset.tooltip = `MQTT: ${statusText}`;
+	mqttButton.title = `MQTT: ${statusText}`;
+	if (textEl) textEl.textContent = statusText;
 
-	mqttButton.classList.remove('good', 'warning', 'bad');
+	mqttButton.classList.remove('good', 'warning', 'bad', 'mqtt-ok', 'mqtt-warn', 'mqtt-bad');
 	if (dot) dot.classList.remove('good-dot', 'warning-dot', 'bad-dot');
 
 	if (statusLower === 'connected') {
-		mqttButton.classList.add('good');
+		mqttButton.classList.add('good', 'mqtt-ok');
 		if (dot) dot.classList.add('good-dot');
-	} else if (statusLower.includes('connecting') || statusLower.includes('reconnecting')) {
-		mqttButton.classList.add('warning');
+	} else if (
+		statusLower.includes('connecting') ||
+		statusLower.includes('reconnect')
+	) {
+		mqttButton.classList.add('warning', 'mqtt-warn');
 		if (dot) dot.classList.add('warning-dot');
 	} else {
-		mqttButton.classList.add('bad');
+		mqttButton.classList.add('bad', 'mqtt-bad');
 		if (dot) dot.classList.add('bad-dot');
 	}
+
+	applyPanelVisibility();
 }
 
 /**
@@ -397,6 +562,8 @@ function updateBmsIframe(state) {
 		soc: state[SDK.BATTERY_STATE_OF_CHARGE_PERCENT],
 		soh: state[SDK.BATTERY_STATE_OF_HEALTH_PERCENT],
 		cycles: state[SDK.BATTERY_CYCLES_COUNT],
+		packs: state[SDK.BMS_PACKS_LIST] || [],
+		packCount: state[SDK.BMS_PACK_COUNT] || 0,
 		bmsTemperatures: state[SDK.BMS_CELL_TEMPERATURES_LIST] || [],
 		totalCapacity: state[SDK.BMS_FULL_CAPACITY_AH],
 		deltaCellVoltage: parseToFloatOrNull(state[SDK.BMS_CELL_VOLTAGE_DELTA_VOLTS]),
@@ -508,13 +675,14 @@ socket.on('full_update', async (data) => {
 	if (clientState[SDK.BMS_CELL_COUNT] > 0) {
 		if (!bmsDataAvailable) {
 			bmsDataAvailable = true;
+			markBmsAvailable(true);
 			const bmsTabButton = document.getElementById('bmsViewTab');
 			if (bmsTabButton) {
-				bmsTabButton.style.display = 'inline-flex';
 				bmsTabButton.click(); // Switch to the BMS tab
 			}
 		}
 	} else {
+		markBmsAvailable(false);
 		const historyTabButton = document.querySelector('#tabbed-card-section .tab-link[data-tab="history-tab"]');
 		if (historyTabButton) historyTabButton.click();
 	}
@@ -548,6 +716,8 @@ socket.on('update', (data) => {
 	// Force immediate dashboard update for critical data changes
 	if (initialDataReceived && chartsInitialized) {
 		renderDashboard(clientState);
+	} else {
+		markDataReceived();
 	}
 
 	debouncedUpdatePowerChart(powerChart, clientState);
@@ -577,6 +747,8 @@ socket.on('hourly_summary_data', (response) => {
 
 /** Main application entry point, triggered when the DOM is fully loaded. */
 window.onload = () => {
+	initDashboardChrome();
+
 	document.addEventListener('visibilitychange', () => {
 		if (!document.hidden && socket.connected) {
 			showToast('Refreshing data...', 'info', 2000);
@@ -584,49 +756,68 @@ window.onload = () => {
 		}
 	});
 
-	const themeToggle = document.getElementById('themeToggle');
+	const densityToggle = document.getElementById('densityToggle');
 
 	/**
-	 * Applies a theme to the application and notifies child components (BMS iframe, charts, weather).
-	 * @param {string} theme - The theme to apply ('light' or 'dark').
+	 * Applies theme side-effects (BMS palette, charts, weather map).
+	 * @param {string|object} modeOrTheme - 'light'|'dark'|theme id|theme detail object
 	 */
-	function applyTheme(theme) {
-		const body = document.body;
-		if (theme === 'dark') {
-			body.classList.remove('light');
-			body.classList.add('dark');
+	function applyTheme(modeOrTheme) {
+		let theme = null;
+		if (modeOrTheme && typeof modeOrTheme === 'object' && modeOrTheme.id) {
+			theme = modeOrTheme;
+		} else if (typeof modeOrTheme === 'string' && modeOrTheme !== 'light' && modeOrTheme !== 'dark') {
+			theme = getThemeById(resolveThemeId(modeOrTheme));
 		} else {
-			body.classList.remove('dark');
-			body.classList.add('light');
+			const id = resolveThemeId(document.body.dataset.theme || getCookie('theme') || 'midnight');
+			theme = getThemeById(id);
 		}
+		const mode = theme?.mode || (document.body.classList.contains('dark') ? 'dark' : 'light');
 		const bmsIframe = document.getElementById('bms-iframe');
 		if (bmsIframe?.contentWindow?.bmsViewer) {
-			bmsIframe.contentWindow.bmsViewer.setTheme(theme);
+			const palette = theme?.bms ? { ...theme.bms, mode: theme.mode } : null;
+			bmsIframe.contentWindow.bmsViewer.setTheme(theme?.id || mode, palette);
 		}
 		setTimeout(resizeFlowBoard, 50);
-	}
-
-	const savedTheme = getCookie("theme");
-	applyTheme(savedTheme ? savedTheme : 'dark');
-
-	themeToggle?.addEventListener('click', () => {
-		const newTheme = document.body.classList.contains('dark') ? 'light' : 'dark';
-		applyTheme(newTheme);
-		setCookie("theme", newTheme, 365);
-
 		if (chartsInitialized) {
 			updateChartTheme(powerChart);
 			updateChartTheme(historicalEnergyChart);
 			updateChartTheme(hourlyEnergyChart);
 		}
-		updateWeatherTheme(newTheme);
+		updateWeatherTheme(mode);
+	}
+
+	function applyDensity(density) {
+		const body = document.body;
+		body.classList.remove('density-comfortable', 'density-compact');
+		body.classList.add(density === 'compact' ? 'density-compact' : 'density-comfortable');
+		if (densityToggle) {
+			densityToggle.textContent = density === 'compact' ? 'Comfortable' : 'Compact';
+		}
+		setTimeout(resizeFlowBoard, 50);
+	}
+
+	const savedDensity = getCookie("ui_density") || 'comfortable';
+	applyDensity(savedDensity);
+	initPluginHealthToggle();
+
+	// Theme changes from Settings (instant preview + save)
+	document.addEventListener('solar-dash-theme-applied', (e) => {
+		applyTheme(e.detail || document.body.dataset.theme);
+	});
+	// Initial sync after chrome applied theme
+	applyTheme(document.body.dataset.theme || 'midnight');
+
+	densityToggle?.addEventListener('click', () => {
+		const next = document.body.classList.contains('density-compact') ? 'comfortable' : 'compact';
+		applyDensity(next);
+		setCookie("ui_density", next, 365);
 	});
 
 	const bmsIframe = document.getElementById('bms-iframe');
 	if (bmsIframe) {
 		bmsIframe.addEventListener('load', () => {
-			const currentTheme = getCookie("theme") || 'dark';
-			applyTheme(currentTheme);
+			applyTheme(document.body.dataset.theme || 'midnight');
 			if (bmsDataAvailable) updateBmsIframe(clientState);
 		});
 	}
@@ -670,6 +861,7 @@ window.onload = () => {
 					}
 				}
 				if (tabId === 'weather-tab') {
+					ensureWeatherStarted();
 					handleMapResize();
 				}
 			}, 50);
@@ -698,10 +890,12 @@ window.onload = () => {
 	hourlyEnergyChart = charts.hourlyEnergyChart;
 	if (powerChart && historicalEnergyChart && hourlyEnergyChart) {
 		chartsInitialized = true;
+		applyTheme(document.body.dataset.theme || 'midnight');
 	}
 
 	initializeFlowBoard(debounce);
 	startAnimationLoop(() => clientState);
+	document.addEventListener('solar-dash-flow-resize', () => resizeFlowBoard());
 	masterRenderLoop();
 	initWeather();
 

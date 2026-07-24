@@ -62,6 +62,14 @@ class ConnectionType(str, Enum):
     SERIAL = "serial"
 
 class LuxpowerModbusPlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "luxpower_modbus",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["LXP-5K", "LXP-12K", "LXP-LB-5K"],
+        "status": "testing",
+        "api_version": 1,
+    }
     """
     A plugin to interact with LuxPower inverters via Modbus TCP or Serial.
 

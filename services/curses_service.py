@@ -1,3 +1,21 @@
+# services/curses_service.py
+"""
+Console Dashboard Service
+
+Text-based curses dashboard for quick local monitoring of inverter/BMS metrics
+without opening the web UI.
+
+Features:
+- Live terminal layout for power flow and pack status
+- Font scale / density friendly rendering hooks
+- Plugin health age/fail lines
+- Multi-BMS pack rows when aggregation is active
+- Coordinated start/stop with the main application lifecycle
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
+"""
+
 import curses
 import logging
 import time
@@ -45,6 +63,7 @@ class CursesService:
         self.app_state = app_state
         self.enabled = app_state.config.getboolean('CONSOLE_DASHBOARD', 'ENABLE_DASHBOARD', fallback=True)
         self.update_interval = app_state.config.getint('CONSOLE_DASHBOARD', 'DASHBOARD_UPDATE_INTERVAL', fallback=1)
+        self.font_scale = str(app_state.config.get('CONSOLE_DASHBOARD', 'FONT_SCALE', fallback='normal')).strip().lower()
         self.stdscr = None
         self.curses_available = False
         try:
@@ -152,52 +171,63 @@ class CursesService:
             logger.error(f"Error stopping curses service: {e}")
 
     def _run_dashboard(self) -> None:
-        """Main loop for the curses dashboard thread."""
+        """Main loop for the curses dashboard thread with auto-restart on crash."""
         if not self.curses_available:
             return
-        try:
-            self.stdscr = curses.initscr()
-            curses.noecho()
-            curses.cbreak()
-            self.stdscr.keypad(True)
-            curses.curs_set(0)
-            self.stdscr.nodelay(True)
-            self._init_curses_colors()
-            layout = {'label_width': 12, 'col_padding': 3, 'data_start_y': 4}
+        restart_delay = 2.0
+        while self.app_state.running:
+            try:
+                self.stdscr = curses.initscr()
+                curses.noecho()
+                curses.cbreak()
+                self.stdscr.keypad(True)
+                curses.curs_set(0)
+                self.stdscr.nodelay(True)
+                self._init_curses_colors()
+                if self.font_scale == 'large':
+                    layout = {'label_width': 10, 'col_padding': 2, 'data_start_y': 3, 'precision_bias': -1}
+                else:
+                    layout = {'label_width': 12, 'col_padding': 3, 'data_start_y': 4, 'precision_bias': 0}
 
-            # Color refresh counter to periodically check for corruption
-            color_refresh_counter = 0
-            
-            while self.app_state.running:
-                loop_start = time.monotonic()
-                
-                input_result = self._handle_input()
-                if input_result == 'quit':
-                    self.app_state.main_threads_stop_event.set()
-                    break
-                
-                # Disable automatic color refresh - only refresh during watchdog restarts
-                # The automatic refresh was causing the alternating color issue
-                # color_refresh_counter += 1
-                # if color_refresh_counter >= 300:
-                #     self._refresh_colors_if_needed()
-                #     color_refresh_counter = 0
-                
-                with self.app_state.data_lock:
-                    data_snapshot = copy.deepcopy(self.app_state.shared_data)
-                
-                self._draw_screen(data_snapshot, layout)
-                
-                if input_result == 'resize':
-                    self.stdscr.clear()
+                while self.app_state.running:
+                    loop_start = time.monotonic()
+                    
+                    input_result = self._handle_input()
+                    if input_result == 'quit':
+                        self.app_state.main_threads_stop_event.set()
+                        return
+                    
+                    with self.app_state.data_lock:
+                        data_snapshot = copy.deepcopy(self.app_state.shared_data)
+                    
                     self._draw_screen(data_snapshot, layout)
-                
-                loop_duration = time.monotonic() - loop_start
-                time.sleep(max(0, self.update_interval - loop_duration))
-        except Exception as e:
-            logger.error(f"Curses dashboard crashed: {e}", exc_info=True)
-        finally:
-            self._cleanup_curses()
+                    
+                    if input_result == 'resize':
+                        self.stdscr.clear()
+                        self._draw_screen(data_snapshot, layout)
+                    
+                    loop_duration = time.monotonic() - loop_start
+                    time.sleep(max(0, self.update_interval - loop_duration))
+            except Exception as e:
+                logger.error(f"Curses dashboard crashed: {e}", exc_info=True)
+                try:
+                    self._cleanup_curses()
+                except Exception:
+                    pass
+                if not self.app_state.running:
+                    break
+                logger.warning(f"Restarting curses dashboard in {restart_delay}s...")
+                time.sleep(restart_delay)
+                restart_delay = min(restart_delay * 1.5, 15.0)
+            finally:
+                try:
+                    self._cleanup_curses()
+                except Exception:
+                    pass
+                # Only exit the outer loop on intentional stop; otherwise retry above.
+                if not self.app_state.running:
+                    break
+                # If we fell out of the inner loop without exception, continue outer to re-init.
 
     def _init_curses_colors(self) -> None:
         """
@@ -738,7 +768,8 @@ class CursesService:
         raw_value = val_override if val_override is not None else val_dict.get("value", STATUS_NA)
         is_error = isinstance(raw_value, str) and "error" in raw_value.lower()
         unit = unit_override if unit_override is not None else val_dict.get("unit", "")
-        formatted_val = raw_value if is_error else format_value(raw_value, prec)
+        eff_prec = max(0, prec + int(layout.get('precision_bias', 0)))
+        formatted_val = raw_value if is_error else format_value(raw_value, eff_prec)
 
         if unit and isinstance(unit, str) and unit not in ["Code", "TextList", "Dict"]:
             formatted_val += f" {unit}"
@@ -809,6 +840,22 @@ class CursesService:
             y2 = self._add_std(y2, col2_start_x, layout, "BattStatus", StandardDataKeys.BATTERY_STATUS_TEXT, data, 0)
             y2 = self._add_std(y2, col2_start_x, layout, "BattChg", StandardDataKeys.ENERGY_BATTERY_DAILY_CHARGE_KWH, data, 2, "kWh")
             y2 = self._add_std(y2, col2_start_x, layout, "BattDisChg", StandardDataKeys.ENERGY_BATTERY_DAILY_DISCHARGE_KWH, data, 2, "kWh")
+
+            packs = data.get("bms_packs_list", {}).get("value")
+            pack_count = data.get("bms_pack_count", {}).get("value")
+            if isinstance(packs, list) and len(packs) > 1:
+                y2 += 1
+                self._add_str_safe(y2, col2_start_x, f"-- BMS PACKS ({pack_count}) --", curses.A_BOLD)
+                y2 += 1
+                for pack in packs[:6]:
+                    if not isinstance(pack, dict):
+                        continue
+                    pid = str(pack.get("instance_id", "?"))[:12]
+                    psoc = pack.get("soc")
+                    ppwr = pack.get("power")
+                    line = f"{pid}: {format_value(psoc, 0)}% {format_value(ppwr, 0)}W"
+                    self._add_str_safe(y2, col2_start_x, line[:36])
+                    y2 += 1
 
             # BMS Details
             has_bms_details = StandardDataKeys.BMS_CELL_VOLTAGE_MIN_VOLTS in data
@@ -898,7 +945,13 @@ class CursesService:
         y3 += 1
         for name in self.app_state.configured_plugin_instance_names:
             status_key = f"{name}_{StandardDataKeys.CORE_PLUGIN_CONNECTION_STATUS}"
-            y3 = self._add_std(y3, col3_start_x, layout, name, status_key, data)
+            status_val = data.get(status_key, {}).get("value", STATUS_NA)
+            age = data.get(f"{name}_health_last_success_age_s", {}).get("value")
+            fails = data.get(f"{name}_health_consecutive_failures", {}).get("value")
+            age_txt = f"{int(age)}s" if isinstance(age, (int, float)) else "--"
+            fail_txt = str(fails) if fails is not None else "0"
+            display = f"{status_val} age={age_txt} fail={fail_txt}"
+            y3 = self._add_std(y3, col3_start_x, layout, name[:layout['label_width']], status_key, data, val_override=display)
 
         y3 += 1
         self._add_str_safe(y3, col3_start_x, "-- SERVICES --", curses.A_BOLD)
@@ -972,10 +1025,14 @@ class CursesService:
         self.stdscr.erase()
         rows, cols = self.stdscr.getmaxyx()
         
-        if cols < 120:
-            self._add_str_safe(rows // 2, 1, f"Terminal too narrow ({cols} < 120)")
+        min_cols = 100 if self.font_scale == 'large' else 120
+        if cols < min_cols:
+            self._add_str_safe(rows // 2, 1, f"Terminal too narrow ({cols} < {min_cols})")
         else:
-            col1_x, col2_x, col3_x = 1, 40, 80
+            if self.font_scale == 'large':
+                col1_x, col2_x, col3_x = 1, 34, 68
+            else:
+                col1_x, col2_x, col3_x = 1, 40, 80
             self._draw_header(data, cols)
             self._add_str_safe(2, 0, "-" * cols)
             max_y = self._draw_data_cols(data, layout, rows, col1_x, col2_x, col3_x)

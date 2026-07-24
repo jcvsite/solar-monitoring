@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# test_plugins/quick_plugin_check.py
 """
 Quick Plugin Health Check
 
@@ -15,7 +16,8 @@ Features:
 - Generates concise pass/fail report
 - Exit code indicates overall success/failure
 
-GitHub: https://github.com/jcvsite/solar-monitoring
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 import os

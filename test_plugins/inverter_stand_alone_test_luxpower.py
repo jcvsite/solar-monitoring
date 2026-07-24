@@ -22,7 +22,8 @@ Connection Types:
 - TCP: For network-based communication (default port 8000 for lxp-bridge)
 - Serial: For direct RS485/RS232 communication
 
-GitHub: https://github.com/jcvsite/solar-monitoring
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 import logging
 import time

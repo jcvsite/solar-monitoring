@@ -65,6 +65,14 @@ class ConnectionType(str, Enum):
     SERIAL = "serial"
 
 class SrneModbusPlugin(DevicePlugin):
+    PLUGIN_META = {
+        "plugin_id": "srne_modbus",
+        "category": "inverter",
+        "protocols": ["modbus_tcp", "modbus_rtu"],
+        "models": ["ML", "HF"],
+        "status": "testing",
+        "api_version": 1,
+    }
     """
     A plugin to interact with SRNE Solar Charge Controllers via Modbus TCP or RTU.
 
@@ -279,7 +287,7 @@ class SrneModbusPlugin(DevicePlugin):
         """
         if not self.is_connected:
             self.logger.error(f"SRNE Plugin '{self.instance_name}': Cannot read dynamic data, not connected.")
-            return {}
+            return None
 
         try:
             # Read all dynamic registers in one block (from 0x0100 to 0x0122)
@@ -304,7 +312,7 @@ class SrneModbusPlugin(DevicePlugin):
             self.last_error_message = f"Communication error: {e}"
             self.logger.error(f"SRNE Plugin '{self.instance_name}': Failed to read dynamic data: {e}")
             self.disconnect()
-            return {}
+            return None
 
     def _decode_registers(self, registers: List[int], register_map: Dict[str, Any], start_addr: int) -> Dict[str, Any]:
         """

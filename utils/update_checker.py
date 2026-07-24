@@ -1,8 +1,18 @@
+# utils/update_checker.py
 """
-Update checker utility for the Solar Monitoring Framework.
+Update Checker Utility
 
-This module provides functionality to check for updates from GitHub
-and compare versions using semantic versioning.
+Checks the public GitHub repository for newer Solar Monitoring releases and
+compares versions using semantic versioning.
+
+Features:
+- GitHub API / release tag lookup for jcvsite/solar-monitoring
+- Semantic version comparison via packaging.version
+- Safe wrapper suitable for background startup checks
+- Returns structured update-available metadata for UI/logging
+
+GitHub Project: https://github.com/jcvsite/solar-monitoring
+License: MIT
 """
 
 import logging

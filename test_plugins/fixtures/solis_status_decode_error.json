@@ -1,0 +1,5 @@
+﻿{
+  "operational_inverter_status_text": {"0": "Stand-by", "1": "Normal"},
+  "pv_total_dc_power_watts": "decode_error",
+  "battery_state_of_charge_percent": 77.2
+}

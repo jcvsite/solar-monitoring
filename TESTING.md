@@ -9,6 +9,7 @@ This guide covers the comprehensive testing and validation system for the Solar 
 - [Quick Start](#quick-start)
 - [Detailed Tool Documentation](#detailed-tool-documentation)
 - [Individual Plugin Tests](#individual-plugin-tests)
+- [Offline Capture Replay Tests](#offline-capture-replay-tests)
 - [Troubleshooting](#troubleshooting)
 - [CI/CD Integration](#cicd-integration)
 
@@ -365,6 +366,31 @@ This makes them suitable for automated CI/CD pipelines that depend on exit codes
 2. Use comprehensive validation for detailed analysis
 3. Run individual plugin tests for focused debugging
 4. Check logs and error messages carefully
+
+## Offline Capture Replay Tests
+
+Hardware-free regressions for sanitizer, JK decode, Deye status maps, multi-BMS aggregation, and HA discovery coverage:
+
+```bash
+# Capture / decode / aggregation fixtures
+python -m unittest test_plugins.test_capture_replay -v
+
+# Flow-board keys must appear in MQTT HA discovery with unit + device_class
+python -m unittest test_plugins.test_ha_discovery_coverage -v
+
+# Data sanitizer + JK decoder unit tests
+python -m unittest test_plugins.test_data_sanitizer_and_jk_decoder -v
+```
+
+| Artifact | Purpose |
+|----------|---------|
+| `test_plugins/fixtures/solis_status_decode_error.json` | Status dict / decode_error sanitization |
+| `test_plugins/fixtures/deye_status_regression.json` | Deye `STATUS_CODES` int→str map |
+| `test_plugins/fixtures/multi_bms_two_packs.json` | Capacity-weighted SOC math (80%×100Ah + 50%×200Ah → 60%) |
+| `test_plugins/fixtures/seplos_v2_frame.json` | Placeholder for future Seplos V2 frame replay |
+| Synthetic JK02 CRC frame | Built in-test via `jk_bms_decoder` |
+
+These tests do **not** require hardware or `paho-mqtt` (HA coverage stubs `paho` for import).
 
 ## Contributing
 
