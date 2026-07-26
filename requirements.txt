@@ -6,9 +6,9 @@ setuptools==69.0.2
 wheel==0.42.0
 tzdata==2023.4
 
-# Greenlet is a special case for the embeddable package.
-# It requires a C++ compiler. We will install it manually from a pre-compiled wheel.
-greenlet==3.0.3
+# Greenlet (used by eventlet). Prefer a version with prebuilt wheels for modern
+# Python (incl. 3.12–3.14 on Windows). Pinning 3.0.3 forced source builds on 3.14.
+greenlet>=3.1.0,<3.4
 
 # Core Modbus communication library
 pymodbus==3.6.2

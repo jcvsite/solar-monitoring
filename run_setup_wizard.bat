@@ -6,6 +6,13 @@ if not exist "venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
+"venv\Scripts\python.exe" -c "import eventlet" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Dependencies are incomplete ^(eventlet missing^).
+    echo Run install.bat successfully before the setup wizard.
+    pause
+    exit /b 1
+)
 echo Running first-run / reconfigure setup wizard...
 "venv\Scripts\python.exe" main.py --setup
 set "EXITCODE=%ERRORLEVEL%"

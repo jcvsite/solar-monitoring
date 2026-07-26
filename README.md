@@ -87,7 +87,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for detailed plugin configuration examp
 ### Prerequisites
 
 *   📦 **Ready-to-Run Package:** For a quick start on Windows, a pre-packaged version may be available on the [Releases](https://github.com/jcvsite/solar-monitoring/releases) page.
-*   🐍 **Python:** Python **3.9 or newer** is required (uses `zoneinfo`). On Windows, enable **Add python.exe to PATH** during install (or use the `py -3` launcher).
+*   🐍 **Python:** Python **3.9 or newer** is required (uses `zoneinfo`). On Windows, **3.11 or 3.12** from [python.org](https://www.python.org/downloads/) is recommended for the smoothest install (prebuilt wheels). Enable **Add python.exe to PATH**, and disable Microsoft Store **App execution aliases** for `python.exe` if the Store stub interferes.
 *   🔧 **System Libraries (for Optional Console UI):**
     *   **Linux/macOS:** `ncurses` development libraries (e.g., `sudo apt install libncursesw5-dev` on Debian/Ubuntu, `sudo yum install ncurses-devel` on Fedora/CentOS, or `brew install ncurses` on macOS).
     *   **Windows:** The installer pulls in `windows-curses` from `requirements.txt` automatically.
