@@ -80,17 +80,17 @@ _Example graphs showing Tuya plug state and corresponding inverter temperature._
 
 See [CONFIGURATION.md](CONFIGURATION.md) for detailed plugin configuration examples.
 
-**First run:** if `config.ini` is missing or incomplete, a console setup wizard prompts for inverter/BMS selection and writes the file (`python main.py`, or `python main.py --setup` to re-run).
+**First run:** if `config.ini` is missing or incomplete, a console setup wizard prompts for inverter/BMS selection and writes the file (`python main.py`, or `python main.py --setup` / `run_setup_wizard.bat` on Windows to re-run).
 
 ## 🚀 Installation & Setup
 
-## Prerequisites
+### Prerequisites
 
-*   📦 **Ready-to-Run Package:** For a quick start on Windows, a pre-packaged version is available on the Releases page.
-*   🐍 **Python:** For manual installation, Python 3.9 or newer is **required** (due to use of `zoneinfo`).
+*   📦 **Ready-to-Run Package:** For a quick start on Windows, a pre-packaged version may be available on the [Releases](https://github.com/jcvsite/solar-monitoring/releases) page.
+*   🐍 **Python:** Python **3.9 or newer** is required (uses `zoneinfo`). On Windows, enable **Add python.exe to PATH** during install (or use the `py -3` launcher).
 *   🔧 **System Libraries (for Optional Console UI):**
     *   **Linux/macOS:** `ncurses` development libraries (e.g., `sudo apt install libncursesw5-dev` on Debian/Ubuntu, `sudo yum install ncurses-devel` on Fedora/CentOS, or `brew install ncurses` on macOS).
-    *   **Windows:** Requires the `windows-curses` package (see `requirements.txt`).
+    *   **Windows:** The installer pulls in `windows-curses` from `requirements.txt` automatically.
 *   🔌 **Hardware & Services:**
     *   A solar inverter with Modbus communication enabled (check inverter settings and data logger capabilities).
     *   Optional: A compatible Battery BMS with a serial or TCP connection.
@@ -100,30 +100,60 @@ See [CONFIGURATION.md](CONFIGURATION.md) for detailed plugin configuration examp
     *   **Optional:** A Tuya-based Smart Plug for fan control, and its **Device ID** & **Local Key**.
     *   A computer, Raspberry Pi, or similar device to run the script continuously.
 
+### Windows (recommended)
+
+```bat
+git clone https://github.com/jcvsite/solar-monitoring.git
+cd solar-monitoring
+
+REM Creates venv, installs dependencies, verifies imports, prepares config.ini
+install.bat
+
+REM Configure devices (wizard) — or edit config.ini manually
+run_setup_wizard.bat
+
+REM Start monitoring
+start_solar_monitoring.bat
+```
+
+| Script | Purpose |
+|--------|---------|
+| `install.bat` | Python 3.9+ check, `venv`, `pip install -r requirements.txt`, import smoke test, `config.ini` |
+| `run_setup_wizard.bat` | Interactive first-run / reconfigure wizard (`python main.py --setup`) |
+| `start_solar_monitoring.bat` | Start once |
+| `start_with_restart.bat` | Auto-restart loop if the process exits |
+
+Then open the dashboard at `http://localhost:8081`.
+
+### Linux / macOS
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/jcvsite/solar-monitoring.git
 cd solar-monitoring
 
-# 2. Create virtual environment (recommended)
+# 2. Install (venv + dependencies + config template)
+chmod +x install.sh
+./install.sh
+
+# Or manually:
 python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# venv\Scripts\activate    # Windows
-
-# 3. Install dependencies
+source venv/bin/activate
 pip install -r requirements.txt
+cp -n config.ini.example config.ini
 
-# 4. Create configuration
-cp config.ini.example config.ini
-# Edit config.ini with your device settings
+# 3. Configure (wizard or edit config.ini)
+python main.py --setup
 
-# 5. Test configuration (offline validation + optional capture/HA tests)
+# 4. Optional offline checks
 python test_plugins/validate_all_plugins.py --offline-only
 python -m unittest test_plugins.test_capture_replay test_plugins.test_ha_discovery_coverage -v
 
-# 6. Run the application
+# 5. Run
 python main.py
+# or: ./start_solar_monitoring.sh  (created by install.sh)
 ```
+
 Access your dashboard at `http://localhost:8081`  
 Optional Prometheus metrics (when enabled): `http://localhost:9108/metrics`
 
