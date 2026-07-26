@@ -24,25 +24,33 @@ echo.
 
 REM -------------------------------------------------------------
 REM Locate a real Python 3.9+ interpreter
-REM Prefer py launcher versions with good wheel support, then python.
+REM Prefer: py -3 (default), then specific 3.12/3.11, then python.exe
 REM Skip the Windows Store "python" stub that is not a real install.
 REM -------------------------------------------------------------
 set "PYTHON_CMD="
 set "PYTHON_ARGS="
+set "PYTHON_VERSION="
 
-call :try_python py "-3.12"
+echo [STEP] Looking for a usable Python 3.9+...
+
+REM Try py -3 first (uses the active/default Python 3.x, e.g. 3.14)
+call :pick_python py -3
 if defined PYTHON_CMD goto :python_ready
-call :try_python py "-3.11"
+
+REM Prefer LTS-ish builds when installed
+call :pick_python py -3.12
 if defined PYTHON_CMD goto :python_ready
-call :try_python py "-3.13"
+call :pick_python py -3.11
 if defined PYTHON_CMD goto :python_ready
-call :try_python py "-3.10"
+call :pick_python py -3.13
 if defined PYTHON_CMD goto :python_ready
-call :try_python py "-3.9"
+call :pick_python py -3.10
 if defined PYTHON_CMD goto :python_ready
-call :try_python py "-3"
+call :pick_python py -3.9
 if defined PYTHON_CMD goto :python_ready
-call :try_python python ""
+
+REM Last resort: python on PATH (must not be the Store stub)
+call :pick_python python
 if defined PYTHON_CMD goto :python_ready
 
 echo [ERROR] No usable Python 3.9+ was found.
@@ -53,39 +61,21 @@ echo   - Enable "Add python.exe to PATH"
 echo   - In Windows Settings, disable App execution aliases for
 echo     "python.exe" / "python3.exe" if they point to the Microsoft Store
 echo.
+echo Quick check in this same window:
+echo   py -3 -c "import sys; print(sys.version)"
+echo.
 pause
 exit /b 1
 
 :python_ready
-echo [STEP] Checking Python version...
-set "PYTHON_VERSION="
-REM Write version via env var path (do NOT embed C:\Users\... in a Python raw string; \U breaks it)
-set "SOLAR_MON_PYVER_FILE=%TEMP%\solar_mon_pyver_%RANDOM%.txt"
-%PYTHON_CMD% %PYTHON_ARGS% -c "import sys,os; v=sys.version_info; open(os.environ['SOLAR_MON_PYVER_FILE'],'w',encoding='utf-8').write('%%d.%%d.%%d'%%(v.major,v.minor,v.micro))" >nul 2>&1
-if exist "%SOLAR_MON_PYVER_FILE%" (
-    set /p PYTHON_VERSION=<"%SOLAR_MON_PYVER_FILE%"
-    del /q "%SOLAR_MON_PYVER_FILE%" >nul 2>&1
-)
-if not defined PYTHON_VERSION (
-    echo [ERROR] Could not read Python version from: %PYTHON_CMD% %PYTHON_ARGS%
-    echo Tip: install Python 3.12 from https://www.python.org/downloads/
-    echo      and disable Microsoft Store app aliases for python.exe
-    pause
-    exit /b 1
-)
-
-%PYTHON_CMD% %PYTHON_ARGS% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python %PYTHON_VERSION% found, but Python 3.9 or newer is required.
-    pause
-    exit /b 1
-)
-
 echo [INFO] Using: %PYTHON_CMD% %PYTHON_ARGS%  ^(Python %PYTHON_VERSION%^)
 
 REM Soft warning for very new CPython where some pins may lag
-%PYTHON_CMD% %PYTHON_ARGS% -c "import sys; raise SystemExit(0 if sys.version_info < (3, 15) else 1)" >nul 2>&1
-if errorlevel 1 (
+for /f "tokens=1,2 delims=." %%A in ("%PYTHON_VERSION%") do (
+    set "PY_MAJOR=%%A"
+    set "PY_MINOR=%%B"
+)
+if "!PY_MAJOR!"=="3" if !PY_MINOR! GEQ 15 (
     echo [WARNING] Python %PYTHON_VERSION% is very new. If dependency install fails,
     echo           install Python 3.12 from python.org and re-run install.bat.
 )
@@ -240,29 +230,34 @@ endlocal
 exit /b 0
 
 REM -------------------------------------------------------------
-REM Subroutine: try_python CMD ARGS
-REM Sets PYTHON_CMD / PYTHON_ARGS if the interpreter is real and >= 3.9
+REM Subroutine: pick_python CMD [ARGS]
+REM Example: call :pick_python py -3
+REM          call :pick_python python
+REM Sets PYTHON_CMD / PYTHON_ARGS / PYTHON_VERSION on success.
 REM -------------------------------------------------------------
-:try_python
-set "_CAND_CMD=%~1"
-set "_CAND_ARGS=%~2"
-if /I "%_CAND_CMD%"=="py" (
+:pick_python
+set "_C=%~1"
+set "_A=%~2"
+set "_V="
+
+if /I "%_C%"=="py" (
     where py >nul 2>&1
     if errorlevel 1 goto :eof
 ) else (
-    where %_CAND_CMD% >nul 2>&1
+    where "%_C%" >nul 2>&1
     if errorlevel 1 goto :eof
 )
 
-REM Must actually run Python code (rejects Microsoft Store stub / missing -3.xx)
-REM Keep this check free of Windows paths inside the -c string.
-%_CAND_CMD% %_CAND_ARGS% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>&1
-if errorlevel 1 (
-    set "_CAND_CMD="
-    set "_CAND_ARGS="
-    goto :eof
-)
+REM Reject missing runtimes / Store stubs / Python older than 3.9
+%_C% %_A% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>&1
+if errorlevel 1 goto :eof
 
-set "PYTHON_CMD=%_CAND_CMD%"
-set "PYTHON_ARGS=%_CAND_ARGS%"
+REM Read version with ONLY double-quotes inside the for /f command
+REM (no single quotes, no %% formatting, no Windows paths in -c)
+for /f "delims=" %%i in ('%_C% %_A% -c "import sys; print(sys.version.split()[0])" 2^>nul') do set "_V=%%i"
+if not defined _V goto :eof
+
+set "PYTHON_CMD=%_C%"
+set "PYTHON_ARGS=%_A%"
+set "PYTHON_VERSION=%_V%"
 goto :eof
