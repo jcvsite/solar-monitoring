@@ -59,12 +59,12 @@ exit /b 1
 :python_ready
 echo [STEP] Checking Python version...
 set "PYTHON_VERSION="
-REM Avoid single quotes inside for /f (breaks on f-strings). Write version to a temp file instead.
-set "PYVER_FILE=%TEMP%\solar_mon_pyver_%RANDOM%.txt"
-%PYTHON_CMD% %PYTHON_ARGS% -c "import sys; v=sys.version_info; open(r'%PYVER_FILE%','w',encoding='utf-8').write('%d.%d.%d' % (v.major,v.minor,v.micro))" >nul 2>&1
-if exist "%PYVER_FILE%" (
-    set /p PYTHON_VERSION=<"%PYVER_FILE%"
-    del /q "%PYVER_FILE%" >nul 2>&1
+REM Write version via env var path (do NOT embed C:\Users\... in a Python raw string; \U breaks it)
+set "SOLAR_MON_PYVER_FILE=%TEMP%\solar_mon_pyver_%RANDOM%.txt"
+%PYTHON_CMD% %PYTHON_ARGS% -c "import sys,os; v=sys.version_info; open(os.environ['SOLAR_MON_PYVER_FILE'],'w',encoding='utf-8').write('%%d.%%d.%%d'%%(v.major,v.minor,v.micro))" >nul 2>&1
+if exist "%SOLAR_MON_PYVER_FILE%" (
+    set /p PYTHON_VERSION=<"%SOLAR_MON_PYVER_FILE%"
+    del /q "%SOLAR_MON_PYVER_FILE%" >nul 2>&1
 )
 if not defined PYTHON_VERSION (
     echo [ERROR] Could not read Python version from: %PYTHON_CMD% %PYTHON_ARGS%
@@ -255,22 +255,13 @@ if /I "%_CAND_CMD%"=="py" (
 )
 
 REM Must actually run Python code (rejects Microsoft Store stub / missing -3.xx)
+REM Keep this check free of Windows paths inside the -c string.
 %_CAND_CMD% %_CAND_ARGS% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>&1
 if errorlevel 1 (
     set "_CAND_CMD="
     set "_CAND_ARGS="
     goto :eof
 )
-
-REM Confirm this exact candidate can report a version (same method as main path)
-set "_CAND_VER_FILE=%TEMP%\solar_mon_cand_%RANDOM%.txt"
-%_CAND_CMD% %_CAND_ARGS% -c "import sys; v=sys.version_info; open(r'%_CAND_VER_FILE%','w',encoding='utf-8').write('%d.%d.%d' % (v.major,v.minor,v.micro))" >nul 2>&1
-if not exist "%_CAND_VER_FILE%" (
-    set "_CAND_CMD="
-    set "_CAND_ARGS="
-    goto :eof
-)
-del /q "%_CAND_VER_FILE%" >nul 2>&1
 
 set "PYTHON_CMD=%_CAND_CMD%"
 set "PYTHON_ARGS=%_CAND_ARGS%"
