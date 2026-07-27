@@ -17,9 +17,10 @@ A comprehensive, <strong>standalone</strong> monitoring framework for renewable 
 ## 📊 Features & Screenshots
 
 ### 🌐 Web Dashboard
-![Solar Monitor Web Dashboard Overview - Light Mode](screenshots/web_dashboard_overview_lightmode.png)
-![Solar Monitor Web Dashboard Overview - Dark Mode](screenshots/web_dashboard_overview_darkmode.png)
-_The main web interface showing key metrics and charts (Light and Dark modes)._
+![Solar Monitor Web Dashboard - Light (Blue)](screenshots/web_dashboard_overview_lightmode_blue.png)
+![Solar Monitor Web Dashboard - Light (Yellow)](screenshots/web_dashboard_overview_lightmode_yellow.png)
+![Solar Monitor Web Dashboard - Dark Mode](screenshots/web_dashboard_overview_darkmode.png)
+_The main web interface showing key metrics and charts (light themes and dark mode)._
 
 ![Solar Monitoring Web Dashboard](screenshots/solar-monitoring-preview.gif)
 

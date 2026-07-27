@@ -169,7 +169,6 @@ config.ini
 *.rar
 *.zip
 *.tar.gz
-screenshots/
 
 # OS specific files
 .DS_Store
