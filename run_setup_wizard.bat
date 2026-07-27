@@ -6,9 +6,9 @@ if not exist "venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
-"venv\Scripts\python.exe" -c "import eventlet" >nul 2>&1
+"venv\Scripts\python.exe" -c "import flask_socketio, simple_websocket" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Dependencies are incomplete ^(eventlet missing^).
+    echo [ERROR] Dependencies are incomplete ^(Flask-SocketIO missing^).
     echo Run install.bat successfully before the setup wizard.
     pause
     exit /b 1

@@ -5,6 +5,10 @@ Web Dashboard Service
 Flask + Flask-SocketIO service that serves the Solar Monitoring web UI, REST-ish
 chart endpoints, and live Socket.IO updates from shared application state.
 
+Uses Flask-SocketIO ``async_mode='threading'`` (no eventlet/greenlet). Background
+push loops and per-client init use ``start_background_task``; WebSocket transport
+is provided by ``simple-websocket``.
+
 Features:
 - Dashboard and BMS templates with PWA/static assets
 - Live shared_data push via Socket.IO
@@ -18,14 +22,13 @@ License: MIT
 
 from flask import Flask, render_template, request, send_from_directory
 from flask_socketio import SocketIO
-import eventlet
 import logging
 import time
-import queue
 import threading
 import os
 import json
 from datetime import datetime
+from typing import Optional
 
 from core.app_state import AppState
 from services.database_service import DatabaseService
@@ -40,12 +43,23 @@ class WebService:
         self.db_service = db_service
         self.app = Flask(__name__)
         self.app.config['TEMPLATES_AUTO_RELOAD'] = True
+        self._server_thread: Optional[threading.Thread] = None
         
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.app.template_folder = os.path.join(project_root, 'templates')
         self.app.static_folder = os.path.join(project_root, 'static')
         
-        self.socketio = SocketIO(self.app, async_mode='eventlet', cors_allowed_origins="*")
+        # threading mode: native threads + simple-websocket for real WebSockets.
+        # Better fit than eventlet for this app (blocking SQLite/plugin I/O elsewhere).
+        self.socketio = SocketIO(
+            self.app,
+            async_mode='threading',
+            cors_allowed_origins="*",
+            logger=False,
+            engineio_logger=False,
+            ping_interval=25,
+            ping_timeout=60,
+        )
         
         if self.app_state.enable_web_dashboard:
             self._setup_routes()
@@ -97,7 +111,7 @@ class WebService:
             sid = request.sid
             self.app_state.web_clients_connected += 1
             logger.info(f"Web client connected: {sid}. Total clients: {self.app_state.web_clients_connected}")
-            eventlet.spawn_n(self._wait_and_send_initial_data, sid)
+            self.socketio.start_background_task(self._wait_and_send_initial_data, sid)
 
         @self.socketio.on('disconnect')
         def handle_disconnect():
@@ -133,25 +147,42 @@ class WebService:
         if not self.app_state.enable_web_dashboard:
             return
         
-        eventlet.spawn_n(self._push_live_updates)
-        eventlet.spawn_n(self._push_periodic_power_history)
+        self.socketio.start_background_task(self._push_live_updates)
+        self.socketio.start_background_task(self._push_periodic_power_history)
         
-        web_thread = threading.Thread(target=self._run_server, name="WebServer", daemon=True)
-        web_thread.start()
+        self._server_thread = threading.Thread(target=self._run_server, name="WebServer", daemon=True)
+        self._server_thread.start()
+
+    def stop(self):
+        """Stop the Socket.IO / Werkzeug server started by ``socketio.run``."""
+        if not self.app_state.enable_web_dashboard:
+            return
+        try:
+            self.socketio.stop()
+            logger.info("Web Service: stop requested.")
+        except Exception as e:
+            logger.debug(f"Web Service stop note: {e}")
 
     def _run_server(self):
         try:
             port = self.app_state.web_dashboard_port
-            listen_socket = eventlet.listen(('0.0.0.0', port))
-            
+            run_kwargs = {
+                "host": "0.0.0.0",
+                "port": port,
+                "allow_unsafe_werkzeug": True,
+                "use_reloader": False,
+            }
+
             if getattr(self.app_state, 'enable_https', False):
-                logger.info(f"Web Service: Starting HTTPS server on 0.0.0.0:{port}")
-                eventlet.wsgi.server(listen_socket, self.app,
-                                     certfile=self.app_state.tls_config.get("certfile"),
-                                     keyfile=self.app_state.tls_config.get("keyfile"))
+                logger.info(f"Web Service: Starting HTTPS server on 0.0.0.0:{port} (threading)")
+                run_kwargs["certfile"] = self.app_state.tls_config.get("certfile")
+                run_kwargs["keyfile"] = self.app_state.tls_config.get("keyfile")
             else:
-                logger.info(f"Web Service: Starting HTTP server on 0.0.0.0:{port}")
-                eventlet.wsgi.server(listen_socket, self.app)
+                logger.info(f"Web Service: Starting HTTP server on 0.0.0.0:{port} (threading)")
+
+            # Blocks until stop() / process exit. threaded=True is the SocketIO default
+            # for this async mode and keeps HTTP + WebSocket clients concurrent.
+            self.socketio.run(self.app, **run_kwargs)
 
         except Exception as e:
             logger.critical(f"Web server failed to start: {e}", exc_info=True)
@@ -161,9 +192,9 @@ class WebService:
         """
         Waits for valid data then sends complete initial state to a new client.
         
-        This method runs in a separate greenlet for each connecting client.
-        It waits up to 15 seconds for the application to have valid data
-        before sending the initial dashboard state to prevent empty dashboards.
+        Runs in a Socket.IO background task (thread) per connecting client.
+        Waits up to 15 seconds for valid data before sending the initial dashboard
+        state to prevent empty dashboards.
         
         Args:
             client_sid: The SocketIO session ID of the connecting client
@@ -176,7 +207,7 @@ class WebService:
                 snapshot = self.app_state.shared_data.copy()
             if self._is_data_ready(snapshot):
                 break
-            eventlet.sleep(0.5)
+            self.socketio.sleep(0.5)
         
         logger.info(f"Sending initial data payload to client {client_sid}.")
         self._send_full_data(snapshot, sid=client_sid)
@@ -192,7 +223,7 @@ class WebService:
         logger.info("Web live update push task started.")
         while self.app_state.running:
             try:
-                eventlet.sleep(self.app_state.web_update_interval)
+                self.socketio.sleep(self.app_state.web_update_interval)
 
                 if self.app_state.web_clients_connected > 0:
                     with self.app_state.data_lock:
@@ -203,7 +234,7 @@ class WebService:
 
             except Exception as e:
                 logger.error(f"Web push live updates loop error: {e}", exc_info=True)
-                eventlet.sleep(5)
+                self.socketio.sleep(5)
 
     def _push_periodic_power_history(self):
         """
@@ -216,7 +247,7 @@ class WebService:
         interval = 15 * 60  # 15 minutes
         logger.info(f"Web periodic power history push task started. Interval: {interval}s.")
         while self.app_state.running:
-            eventlet.sleep(interval)
+            self.socketio.sleep(interval)
             if self.app_state.web_clients_connected > 0:
                 logger.info("Pushing periodic 24-hour power history to all clients.")
                 self._send_power_history(days=1)

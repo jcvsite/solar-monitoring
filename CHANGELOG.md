@@ -4,6 +4,9 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 
 ## [Unreleased]
 
+### Changed
+- **Web dashboard**: switched Flask-SocketIO from `eventlet` to `async_mode='threading'` (real WebSockets via `simple-websocket`). Removes `eventlet`/`greenlet` and the process-wide monkey patch; better suited to blocking SQLite/plugin I/O on modern Python (incl. 3.14).
+
 ## [1.4.0] - 2026-07-24
 
 ### Added

@@ -6,10 +6,6 @@ setuptools==69.0.2
 wheel==0.42.0
 tzdata==2023.4
 
-# Greenlet (used by eventlet). Prefer a version with prebuilt wheels for modern
-# Python (incl. 3.12–3.14 on Windows). Pinning 3.0.3 forced source builds on 3.14.
-greenlet>=3.1.0,<3.4
-
 # Core Modbus communication library
 pymodbus==3.6.2
 
@@ -28,11 +24,11 @@ packaging==23.2
 # Web Dashboard: Flask web framework
 Flask==2.3.3
 
-# Web Dashboard: WebSocket communication
+# Web Dashboard: WebSocket communication (threading async mode — no eventlet/greenlet)
 Flask-SocketIO==5.3.6
 
-# Web Dashboard: Async library required by Flask-SocketIO
-eventlet==0.33.3
+# Required for real WebSocket transport under Flask-SocketIO async_mode='threading'
+simple-websocket>=1.0.0
 
 # Tuya Control: Tuya device control library
 # Install if you use the Tuya smart plug feature.

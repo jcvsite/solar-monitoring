@@ -6,11 +6,10 @@ This script orchestrates the entire application lifecycle for local solar/invert
 and BMS monitoring with web, console, MQTT, and optional smart-plug automation.
 
 Features:
-- Eventlet monkey patch for async web operations
 - Logging setup (console and rotating file)
 - Configuration load/validation and optional first-run setup wizard
 - Single-instance lock to prevent duplicate processes
-- Core services: Database, MQTT, Web, Console, Tuya, Metrics, Data Filter
+- Core services: Database, MQTT, Web (Flask-SocketIO threading), Console, Tuya, Metrics, Data Filter
 - Dynamic plugin load and per-device polling threads
 - Data processor, watchdog, and thread health monitors
 - Graceful shutdown on SIGINT/SIGTERM
@@ -18,11 +17,6 @@ Features:
 GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
 """
-
-# Monkey patch standard libraries for eventlet compatibility.
-# This must be done at the very top, before other standard libraries are imported.
-import eventlet
-eventlet.monkey_patch()
 
 import logging
 from logging.handlers import RotatingFileHandler

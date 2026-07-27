@@ -19,12 +19,12 @@ echo.
 echo [INFO] Install directory: %CD%
 echo.
 echo [INFO] Recommended Python: 3.11 or 3.12 from https://www.python.org/downloads/
-echo [INFO] Supported: Python 3.9+  ^(3.14 OK with current requirements^)
+echo [INFO] Supported: Python 3.9+ ^(including 3.14 with current requirements^)
 echo.
 
 REM -------------------------------------------------------------
 REM Locate a real Python 3.9+ interpreter
-REM Prefer: py -3 (default), then specific 3.12/3.11, then python.exe
+REM Prefer: 3.12/3.11 (smoothest wheels), then other py -3.x, then python.exe
 REM Skip the Windows Store "python" stub that is not a real install.
 REM -------------------------------------------------------------
 set "PYTHON_CMD="
@@ -33,11 +33,7 @@ set "PYTHON_VERSION="
 
 echo [STEP] Looking for a usable Python 3.9+...
 
-REM Try py -3 first (uses the active/default Python 3.x, e.g. 3.14)
-call :pick_python py -3
-if defined PYTHON_CMD goto :python_ready
-
-REM Prefer LTS-ish builds when installed
+REM Prefer LTS-ish builds when installed (smoother than bleeding-edge 3.14)
 call :pick_python py -3.12
 if defined PYTHON_CMD goto :python_ready
 call :pick_python py -3.11
@@ -47,6 +43,10 @@ if defined PYTHON_CMD goto :python_ready
 call :pick_python py -3.10
 if defined PYTHON_CMD goto :python_ready
 call :pick_python py -3.9
+if defined PYTHON_CMD goto :python_ready
+
+REM Default launcher / whatever is active (may be 3.14)
+call :pick_python py -3
 if defined PYTHON_CMD goto :python_ready
 
 REM Last resort: python on PATH (must not be the Store stub)
@@ -129,26 +129,7 @@ if not exist "requirements.txt" (
     exit /b 1
 )
 
-REM Install greenlet from a binary wheel first (avoids needing MSVC on Windows)
-echo [STEP] Installing greenlet ^(binary wheel preferred^)...
-"%VENV_PY%" -m pip install --only-binary=:all: "greenlet>=3.1.0,<3.4"
-if errorlevel 1 (
-    echo [WARNING] No binary greenlet wheel for this Python. Trying normal install...
-    "%VENV_PY%" -m pip install "greenlet>=3.1.0,<3.4"
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Could not install greenlet.
-        echo Python %PYTHON_VERSION% may not have a prebuilt wheel yet.
-        echo Fix options:
-        echo   1^) Install Python 3.12 from https://www.python.org/downloads/ and re-run
-        echo   2^) Or install "Microsoft C++ Build Tools" and re-run
-        echo.
-        pause
-        exit /b 1
-    )
-)
-
-echo [STEP] Installing remaining dependencies from requirements.txt...
+echo [STEP] Installing dependencies from requirements.txt...
 "%VENV_PY%" -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
@@ -167,10 +148,10 @@ REM -------------------------------------------------------------
 REM Smoke-test critical imports
 REM -------------------------------------------------------------
 echo [STEP] Verifying critical modules can import...
-"%VENV_PY%" -c "import eventlet, flask, flask_socketio, pymodbus, serial, paho.mqtt.client, packaging, ping3, tinytuya, curses, greenlet; print('OK')"
+"%VENV_PY%" -c "import flask, flask_socketio, simple_websocket, pymodbus, serial, paho.mqtt.client, packaging, ping3, tinytuya, curses; print('OK')"
 if errorlevel 1 (
     echo [ERROR] Dependency import check failed.
-    echo Re-run install.bat after fixing the errors above.
+    echo Prefer Python 3.11/3.12, delete the venv folder, and re-run install.bat.
     pause
     exit /b 1
 )
