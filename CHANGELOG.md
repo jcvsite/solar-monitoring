@@ -7,6 +7,9 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 ### Changed
 - **Web dashboard**: switched Flask-SocketIO from `eventlet` to `async_mode='threading'` (real WebSockets via `simple-websocket`). Removes `eventlet`/`greenlet` and the process-wide monkey patch; better suited to blocking SQLite/plugin I/O on modern Python (incl. 3.14).
 
+### Fixed
+- **KPI grid direction**: live Import/Export labels used the wrong sign vs the flow board (SDK: +export / −import). Live watts now show on the matching Grid Import / Grid Export card.
+
 ## [1.4.0] - 2026-07-24
 
 ### Added

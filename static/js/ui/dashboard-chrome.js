@@ -210,7 +210,11 @@ export function updateKpiStrip(state) {
 	const soc = num(state?.[SDK.BATTERY_STATE_OF_CHARGE_PERCENT]);
 	const pvNow = num(state?.[SDK.PV_TOTAL_DC_POWER_WATTS]);
 	const loadNow = num(state?.[SDK.LOAD_TOTAL_POWER_WATTS]);
+	// SDK convention (matches flow board / charts): positive = export to grid, negative = import from grid.
 	const gridNow = num(state?.[SDK.GRID_TOTAL_ACTIVE_POWER_WATTS]);
+	const gridImportingNow = gridNow < -1;
+	const gridExportingNow = gridNow > 1;
+	const gridNowAbs = Math.abs(gridNow);
 	const runtime = state?.display_battery_time_remaining || 'N/A';
 
 	const loadFromSolar = Math.max(0, pvDaily - battCharge - gridExport);
@@ -221,8 +225,8 @@ export function updateKpiStrip(state) {
 	const items = [
 		{ id: 'pv', label: 'PV Today', value: `${formatNum(pvDaily, 1)} kWh`, sub: `${formatNum(pvNow, 0)} W now` },
 		{ id: 'load', label: 'Load Today', value: `${formatNum(loadTotal, 1)} kWh`, sub: `${formatNum(loadNow, 0)} W now` },
-		{ id: 'import', label: 'Grid Import', value: `${formatNum(gridImport, 1)} kWh`, sub: gridNow >= 0 ? `Import ${formatNum(Math.abs(gridNow), 0)} W` : `Export ${formatNum(Math.abs(gridNow), 0)} W` },
-		{ id: 'export', label: 'Grid Export', value: `${formatNum(gridExport, 1)} kWh`, sub: '' },
+		{ id: 'import', label: 'Grid Import', value: `${formatNum(gridImport, 1)} kWh`, sub: gridImportingNow ? `${formatNum(gridNowAbs, 0)} W now` : '0 W now' },
+		{ id: 'export', label: 'Grid Export', value: `${formatNum(gridExport, 1)} kWh`, sub: gridExportingNow ? `${formatNum(gridNowAbs, 0)} W now` : '0 W now' },
 		{ id: 'self', label: 'Self-Use', value: `${formatNum(selfPct, 0)}%`, sub: `${formatNum(loadFromSolar, 1)} kWh from PV` },
 		{ id: 'auto', label: 'Autonomy', value: `${formatNum(autonomyPct, 0)}%`, sub: 'PV + battery vs load' },
 		{ id: 'soc', label: 'Battery SOC', value: `${formatNum(soc, 0)}%`, sub: String(runtime) },
@@ -235,11 +239,12 @@ export function updateKpiStrip(state) {
 	}
 
 	if (mobile) {
+		const gridDir = gridImportingNow ? 'Import' : (gridExportingNow ? 'Export' : 'Idle');
 		mobile.innerHTML = `
 			<div class="ms-card"><span class="ms-label">PV</span><span class="ms-value">${formatNum(pvNow, 0)} W</span><span class="ms-sub">${formatNum(pvDaily, 1)} kWh</span></div>
 			<div class="ms-card"><span class="ms-label">Load</span><span class="ms-value">${formatNum(loadNow, 0)} W</span><span class="ms-sub">${formatNum(loadTotal, 1)} kWh</span></div>
 			<div class="ms-card"><span class="ms-label">SOC</span><span class="ms-value">${formatNum(soc, 0)}%</span><span class="ms-sub">${escapeHtml(String(runtime))}</span></div>
-			<div class="ms-card"><span class="ms-label">Grid</span><span class="ms-value">${formatNum(Math.abs(gridNow), 0)} W</span><span class="ms-sub">${gridNow >= 0 ? 'Import' : 'Export'}</span></div>
+			<div class="ms-card"><span class="ms-label">Grid</span><span class="ms-value">${formatNum(gridNowAbs, 0)} W</span><span class="ms-sub">${gridDir}</span></div>
 		`;
 	}
 }
