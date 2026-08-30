@@ -43,6 +43,9 @@ ping3==4.0.4
 # On Linux/macOS, ensure ncurses library development headers are installed instead.
 windows-curses
 
+# mDNS / Zeroconf: LAN discovery for ESP32 display and future Home Assistant integration.
+zeroconf>=0.132.0
+
 
 # Note: The script uses `zoneinfo`, which is built into Python 3.9+.
 # If you need to run on Python 3.8 or older, you would need to add `backports.zoneinfo`.

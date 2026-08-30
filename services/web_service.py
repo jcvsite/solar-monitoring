@@ -20,7 +20,7 @@ GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
 """
 
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, jsonify, Response
 from flask_socketio import SocketIO
 import logging
 import time
@@ -32,6 +32,25 @@ from typing import Optional
 
 from core.app_state import AppState
 from services.database_service import DatabaseService
+from services.display_api import (
+    DISPLAY_API_HEADER,
+    build_bms_payload,
+    build_display_payload,
+    build_history_payload,
+    check_display_token,
+)
+from services.display_config import (
+    LAYOUT_CATALOG,
+    THEME_CATALOG,
+    build_config_response,
+    check_settings_pin_for_write,
+    download_firmware_bytes,
+    fetch_latest_release,
+    load_display_config,
+    save_display_config,
+    settings_pin_is_set,
+    verify_settings_pin,
+)
 from plugins.plugin_interface import StandardDataKeys
 from utils.helpers import format_value_web, STATUS_NA, INIT_VAL
 
@@ -85,13 +104,136 @@ class WebService:
                 "map_zoom_level": self.app_state.weather_map_zoom_level
             }
             return render_template("web_dashboard.html", 
-                                   script_version=self.app_state.version, 
+                                   script_version=self.app_state.version,
+                                   system_title=self.app_state.system_title,
                                    weather_config_json=json.dumps(weather_config))
 
         @self.app.route('/bms')
         def bms_view():
             """Serves the self-contained BMS viewer page."""
-            return render_template('bms.html')
+            return render_template('bms.html', system_title=self.app_state.system_title)
+
+        @self.app.route('/api/display')
+        def api_display():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            payload = build_display_payload(self.app_state)
+            resp = jsonify(payload)
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/bms')
+        def api_display_bms():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            payload = build_bms_payload(self.app_state)
+            resp = jsonify(payload)
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/history')
+        def api_display_history():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            try:
+                hours = int(request.args.get("hours", 24))
+            except (TypeError, ValueError):
+                hours = 24
+            payload = build_history_payload(self.app_state, self.db_service, hours=hours)
+            resp = jsonify(payload)
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/config', methods=['GET', 'POST'])
+        def api_display_config():
+            token_err = check_display_token(self.app_state, request)
+            token_configured = bool(
+                getattr(self.app_state, "display_api_token", "") or ""
+            )
+            include_pin = token_err is None and token_configured
+            if request.method == 'GET':
+                if token_configured and token_err:
+                    return jsonify({"ok": False, "error": token_err}), 401
+                resp = jsonify(build_config_response(include_pin=include_pin))
+                resp.headers[DISPLAY_API_HEADER] = "1"
+                return resp
+            if token_configured and token_err:
+                return jsonify({"ok": False, "error": token_err}), 401
+            body = request.get_json(silent=True) or {}
+            current = load_display_config()
+            pin_err = check_settings_pin_for_write(current, body)
+            if pin_err:
+                return jsonify({"ok": False, "error": pin_err}), 403
+            write_body = {k: v for k, v in body.items() if k != "pin"}
+            save_display_config(write_body)
+            out = build_config_response()
+            resp = jsonify(out)
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/verify-pin', methods=['POST'])
+        def api_display_verify_pin():
+            body = request.get_json(silent=True) or {}
+            cfg = load_display_config()
+            if not settings_pin_is_set(cfg):
+                return jsonify({"ok": True, "unlocked": True})
+            if verify_settings_pin(cfg, body.get("pin")):
+                return jsonify({"ok": True, "unlocked": True})
+            return jsonify({"ok": False, "error": "Invalid PIN"}), 403
+
+        @self.app.route('/api/display/layouts')
+        def api_display_layouts():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            resp = jsonify({"ok": True, "layouts": LAYOUT_CATALOG})
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/themes')
+        def api_display_themes():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            resp = jsonify({"ok": True, "themes": THEME_CATALOG})
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/update-info')
+        def api_display_update_info():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            token = getattr(self.app_state, "display_github_token", "") or ""
+            release, gh_err = fetch_latest_release(token)
+            payload = {"ok": release is not None, "release": release, "repo": "jcvsite/Solar-monitoring-viewer-esp32"}
+            if gh_err:
+                payload["error"] = gh_err
+            resp = jsonify(payload)
+            resp.headers[DISPLAY_API_HEADER] = "1"
+            return resp
+
+        @self.app.route('/api/display/firmware/latest.bin')
+        def api_display_firmware():
+            err = check_display_token(self.app_state, request)
+            if err:
+                return jsonify({"ok": False, "error": err}), 401
+            token = getattr(self.app_state, "display_github_token", "") or ""
+            ver = request.args.get("ver", "")
+            data, fname, dl_err = download_firmware_bytes(token, ver)
+            if dl_err or not data:
+                return jsonify({"ok": False, "error": dl_err or "download failed"}), 502
+            cfg = load_display_config()
+            if cfg.get("force_update"):
+                save_display_config({"force_update": False, "force_update_version": ""})
+            return Response(
+                data,
+                mimetype="application/octet-stream",
+                headers={"Content-Disposition": f'attachment; filename="{fname or "firmware.bin"}"'},
+            )
 
         @self.app.route('/sw.js')
         def service_worker():
@@ -395,6 +537,7 @@ class WebService:
         payload['display_timestamp'] = datetime.now(self.app_state.local_tzinfo).strftime("%Y-%m-%d %H:%M:%S %Z")
         payload['display_mqtt_connection_status'] = self.app_state.mqtt_last_state or "Disabled"
         payload['display_tuya_status'] = self.app_state.tuya_last_known_state
+        payload['system_title'] = self.app_state.system_title
         
         time_remaining = data_snapshot.get(StandardDataKeys.OPERATIONAL_BATTERY_TIME_REMAINING_ESTIMATE_TEXT, {}).get("value", STATUS_NA)
         payload['display_battery_time_remaining'] = time_remaining

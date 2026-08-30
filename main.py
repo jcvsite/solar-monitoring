@@ -45,6 +45,7 @@ from services.curses_service import CursesService
 from services.tuya_service import TuyaService
 from services.data_filter_service import DataFilterService
 from services.metrics_service import MetricsService
+from services.mdns_service import MdnsService
 from utils.lock import acquire_lock, cleanup_lock_file
 from utils.update_checker import check_for_updates_safe
 
@@ -175,6 +176,7 @@ if __name__ == "__main__":
     tuya_service = TuyaService(app_state)
     filter_service = DataFilterService(app_state)
     metrics_service = MetricsService(app_state)
+    mdns_service = MdnsService(app_state)
 
     # --- 4. Load Plugins ---
     logger.info("Loading configured plugins...")
@@ -235,6 +237,7 @@ if __name__ == "__main__":
     db_service.start()
     mqtt_service.start()
     web_service.start()
+    mdns_service.start()
     curses_service.start()
     metrics_service.start()
     
@@ -276,6 +279,9 @@ if __name__ == "__main__":
         
         logger.info("Stopping web service...")
         web_service.stop()
+
+        logger.info("Stopping mDNS service...")
+        mdns_service.stop()
 
         logger.info("Stopping metrics service...")
         metrics_service.stop()

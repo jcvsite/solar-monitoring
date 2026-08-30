@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 from typing import Any, Type, Optional
 
 from core.app_state import AppState
+from core.constants import APP_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,9 @@ def load_configuration(config_path: str, app_state: AppState):
     plugin_instances_str = get_config_value("PLUGIN_INSTANCES", str, "", section='GENERAL')
     if plugin_instances_str:
         app_state.configured_plugin_instance_names = [name.strip() for name in plugin_instances_str.split(',') if name.strip()]
+
+    title = get_config_value("SYSTEM_TITLE", str, APP_NAME, section='GENERAL') or APP_NAME
+    app_state.system_title = title.strip() or APP_NAME
     
     # INVERTER_SYSTEM
     app_state.default_mppt_count = get_config_value("DEFAULT_MPPT_COUNT", int, 2, section='INVERTER_SYSTEM')
@@ -128,6 +132,14 @@ def load_configuration(config_path: str, app_state: AppState):
     app_state.web_dashboard_port = get_config_value("WEB_DASHBOARD_PORT", int, 8081, section='WEB_DASHBOARD')
     app_state.web_update_interval = get_config_value("WEB_UPDATE_INTERVAL", float, 2.0, section='WEB_DASHBOARD')
     app_state.enable_https = get_config_value("ENABLE_HTTPS", bool, False, section='WEB_DASHBOARD')
+    app_state.display_api_token = get_config_value("DISPLAY_API_TOKEN", str, "", section='WEB_DASHBOARD') or ""
+    app_state.display_github_token = get_config_value("DISPLAY_GITHUB_TOKEN", str, "", section='WEB_DASHBOARD') or ""
+
+    # mDNS (advertise when web dashboard is on; default instance name follows SYSTEM_TITLE)
+    app_state.enable_mdns = get_config_value("ENABLE_MDNS", bool, True, section='WEB_DASHBOARD')
+    app_state.mdns_hostname = get_config_value("MDNS_HOSTNAME", str, "solar-monitoring", section='WEB_DASHBOARD') or "solar-monitoring"
+    mdns_instance = get_config_value("MDNS_INSTANCE_NAME", str, "", section='WEB_DASHBOARD') or ""
+    app_state.mdns_instance_name = mdns_instance.strip() or app_state.system_title
 
     # TLS (shared settings)
     app_state.tls_config["ca_certs"] = get_config_value("TLS_CA_CERTS_PATH", str, None, section='TLS')

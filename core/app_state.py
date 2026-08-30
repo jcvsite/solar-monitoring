@@ -23,6 +23,7 @@ import paho.mqtt.client as mqtt
 from typing import Dict, Any, Optional, List
 
 from utils.helpers import TUYA_STATE_UNKNOWN
+from core.constants import APP_NAME
 
 class AppState:
     """
@@ -55,6 +56,8 @@ class AppState:
         self.local_tzinfo = None
         self.configured_plugin_instance_names: List[str] = []
         self.alert_categories_display_order = ["status", "grid", "eps", "battery", "inverter", "bms"]
+        # User-facing title for web / console / ESP32 / mDNS (not product identity)
+        self.system_title: str = APP_NAME
         
         # MQTT State
         self.enable_mqtt = False
@@ -74,6 +77,13 @@ class AppState:
         self.web_clients_connected = 0
         self.last_sent_data_web: Dict[str, Any] = {}
         self.enable_https = False
+        self.display_api_token: str = ""
+        self.display_github_token: str = ""
+
+        # mDNS / Zeroconf LAN discovery
+        self.enable_mdns = True
+        self.mdns_hostname: str = "solar-monitoring"
+        self.mdns_instance_name: str = APP_NAME
 
         # TLS Configuration (shared)
         self.tls_config: Dict[str, Optional[str]] = {

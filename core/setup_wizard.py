@@ -209,6 +209,7 @@ def _render_ini(
     enable_mqtt: bool,
     enable_weather: bool,
     mqtt: Dict[str, str],
+    system_title: str = "Solar Monitoring",
 ) -> str:
     names = [n for n, _, _ in instances]
     lines = [
@@ -219,6 +220,7 @@ def _render_ini(
         "setup_completed = true",
         f"PLUGIN_INSTANCES = {', '.join(names) if names else ''}",
         "POLL_INTERVAL = 5",
+        f"SYSTEM_TITLE = {system_title}",
         f"LOCAL_TIMEZONE = {timezone}",
         "CHECK_FOR_UPDATES = false",
         "MAX_RECONNECT_ATTEMPTS = 5",
@@ -249,6 +251,8 @@ def _render_ini(
         "ENABLE_HTTPS = false",
         "WEB_UPDATE_INTERVAL = 2.0",
         'FLASK_SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_STRING"',
+        "ENABLE_MDNS = true",
+        "MDNS_HOSTNAME = solar-monitoring",
         "",
         "[MQTT]",
         f"ENABLE_MQTT = {'true' if enable_mqtt else 'false'}",
@@ -382,6 +386,7 @@ def run_setup_wizard(config_path: Path) -> bool:
         return False
 
     timezone = _prompt("Timezone (IANA)", "Asia/Manila")
+    system_title = _prompt("Display title (web / console / ESP32)", "Solar Monitoring")
     try:
         pv_kw = float(_prompt("PV array size (kW)", "6.6"))
     except ValueError:
@@ -413,6 +418,7 @@ def run_setup_wizard(config_path: Path) -> bool:
         enable_mqtt=enable_mqtt,
         enable_weather=enable_weather,
         mqtt=mqtt,
+        system_title=system_title or "Solar Monitoring",
     )
 
     if config_path.exists():

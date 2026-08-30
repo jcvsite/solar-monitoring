@@ -89,6 +89,7 @@ MAX_RECONNECT_ATTEMPTS = 5
 |-----------|-------------|---------|----------|
 | `PLUGIN_INSTANCES` | Active plugin instances | None | `INV_Solis, BMS_Seplos_v2` |
 | `POLL_INTERVAL` | Data polling frequency (seconds) | 5 | `5`, `10`, `30` |
+| `SYSTEM_TITLE` | User-facing title (web, console, ESP32, mDNS name) | `Solar Monitoring` | `JCV Home Solar` |
 | `LOCAL_TIMEZONE` | IANA timezone identifier | UTC | `Europe/London`, `America/New_York` |
 | `CHECK_FOR_UPDATES` | Enable update checking | true | `true`, `false` |
 | `PRIMARY_BMS_INSTANCE` | Default BMS for detail views | first BMS | `BMS_Seplos_v2` |
@@ -425,7 +426,33 @@ WEB_UPDATE_INTERVAL = 2.0
 
 # Security (CHANGE THIS!)
 FLASK_SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_STRING"
+
+# Optional token for ESP32 /api/display* (Bearer or ?token=). Empty = open on LAN.
+# DISPLAY_API_TOKEN =
+
+# GitHub PAT to proxy firmware from jcvsite/Solar-monitoring-viewer-esp32 (private repo OTA).
+# DISPLAY_GITHUB_TOKEN =
+
+# mDNS: advertise _solar-monitoring._tcp for ESP32 (and future HA) discovery
+ENABLE_MDNS = true
+MDNS_HOSTNAME = solar-monitoring
+# MDNS_INSTANCE_NAME =   # blank = use SYSTEM_TITLE
 ```
+
+**ESP32 display APIs** (when web dashboard is enabled):
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/display` | Glance snapshot |
+| `GET /api/display/bms` | BMS detail |
+| `GET /api/display/history` | History sparkline data |
+| `GET/POST /api/display/config` | Global display settings (`display_config.json`) |
+| `GET /api/display/layouts` | Layout catalog (web mockups) |
+| `GET /api/display/themes` | Theme catalog |
+| `GET /api/display/update-info` | Latest viewer firmware release |
+| `GET /api/display/firmware/latest.bin` | OTA firmware proxy |
+
+Configure layouts, themes, rotation, and OTA from the web dashboard **Settings → ESP32 display**. Firmware repo: [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32). See [`esp32_display/README.md`](esp32_display/README.md).
 
 ### Database
 

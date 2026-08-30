@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flash Solar Glance Display</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root {
+      --bg: #12151a;
+      --panel: #1e232b;
+      --text: #f2f4f7;
+      --muted: #9aa3ad;
+      --accent: #ffb020;
+      --ok: #20e070;
+      --line: #3a4450;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #2a2418 0%, var(--bg) 55%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    main {
+      width: min(520px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px 28px 24px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.55rem;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.98rem;
+    }
+    ol {
+      margin: 0 0 22px;
+      padding-left: 1.2rem;
+      color: var(--text);
+      line-height: 1.55;
+    }
+    li { margin: 0.35rem 0; }
+    li strong { color: var(--accent); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    esp-web-install-button {
+      display: inline-block;
+    }
+    esp-web-install-button:not(:defined) {
+      visibility: hidden;
+    }
+    .btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 20px;
+      font-weight: 650;
+      font-size: 1rem;
+      cursor: pointer;
+      background: var(--accent);
+      color: #1a1205;
+    }
+    .btn:hover { filter: brightness(1.05); }
+    .note {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.45;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+    .note code {
+      background: #12151a;
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: #d7dde5;
+    }
+    a { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Flash Solar Glance Display</h1>
+    <p class="lead">
+      Install this firmware on your 2.8&Prime; ESP32 display from the browser.
+      No PlatformIO or Arduino IDE required.
+    </p>
+
+    <ol>
+      <li>Use <strong>Chrome</strong> or <strong>Edge</strong> on a desktop/laptop (not ESPHome Web).</li>
+      <li>Plug the display in with a <strong>USB data</strong> cable.</li>
+      <li>Click <strong>Install</strong>, pick the serial port, confirm.</li>
+      <li>When done, set WiFi on the screen (phone joins <code>SolarDisplay-Setup-XXXX</code>).</li>
+    </ol>
+
+    <div class="actions">
+      <esp-web-install-button manifest="./manifest.json">
+        <button slot="activate" class="btn">Install firmware</button>
+      </esp-web-install-button>
+    </div>
+
+    <p class="note">
+      Needs firmware files in <code>webflash/firmware/</code>.
+      Build them once with PlatformIO, then run
+      <code>scripts/prepare_webflash.ps1</code> (Windows) or
+      <code>scripts/prepare_webflash.sh</code> (Linux/macOS).
+      Serve this folder over <strong>http://localhost</strong> (Web Serial does not work from a raw
+      <code>file://</code> page). Example:
+      <code>python -m http.server 8765 --directory webflash</code>
+      then open <code>http://localhost:8765</code>.
+      <br/><br/>
+      This is <strong>not</strong> <a href="https://web.esphome.io/" rel="noopener">ESPHome Web</a> —
+      that site only flashes ESPHome images.
+    </p>
+  </main>
+</body>
+</html>

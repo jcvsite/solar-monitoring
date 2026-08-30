@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solar Dashboard</title>
+    <title>{{ system_title }}</title>
 	<link rel="manifest" href="/static/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SolarDash">
+    <meta name="apple-mobile-web-app-title" content="{{ system_title }}">
     <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
 	
     <!-- Local vendor libraries (offline-capable) -->
@@ -24,9 +24,11 @@
     <link rel="stylesheet" href="/static/vendor/fonts.css">
 	<link rel="icon" href="/static/icons/icon-192x192.png" type="image/png">
     <link rel="stylesheet" href="/static/css/dashboard.css?v=14">
+    <link rel="stylesheet" href="/static/css/display_preview.css?v=1">
     <script>
         // Pass backend config to the frontend
         window.WEATHER_CONFIG = JSON.parse('{{ weather_config_json | safe }}');
+        window.SYSTEM_TITLE = {{ system_title | tojson }};
     </script>
 </head>
 <body class="dark" data-theme="midnight"> 
@@ -48,7 +50,7 @@
         <symbol id="pv-yield-icon" viewBox="0 0 24 24"><g fill="#FFD700"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 20h6v-6h-6zm1-5h4v4h-4z"/><circle cx="12" cy="12" r="3" fill="#212121"/><path d="M12 9v4h2z"/></g></symbol>
     </svg>
     <div class="dash-header-bar">
-		<h1> <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sun-icon"> <circle cx="12" cy="12" r="5"></circle> <line x1="12" y1="1" x2="12" y2="3"></line> <line x1="12" y1="21" x2="12" y2="23"></line> <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line> <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line> <line x1="1" y1="12" x2="3" y2="12"></line> <line x1="21" y1="12" x2="23" y2="12"></line> <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line> <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line> </svg> Solar Dashboard </h1>
+		<h1> <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sun-icon"> <circle cx="12" cy="12" r="5"></circle> <line x1="12" y1="1" x2="12" y2="3"></line> <line x1="12" y1="21" x2="12" y2="23"></line> <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line> <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line> <line x1="1" y1="12" x2="3" y2="12"></line> <line x1="21" y1="12" x2="23" y2="12"></line> <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line> <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line> </svg> <span id="system-title-text">{{ system_title }}</span> </h1>
 		<div class="top-toolbar" id="top-toolbar">
 			<button id="densityToggle" type="button" title="Toggle UI density">Compact</button>
 			<button id="kioskToggle" type="button" title="Fullscreen kiosk mode">Kiosk</button>
@@ -424,6 +426,70 @@
 				</label>
 				<label><input type="checkbox" id="setting-weather-auto"> Use browser location</label>
 				<p class="settings-hint">Overrides apply in this browser only. Server <code>config.ini</code> is unchanged.</p>
+			</fieldset>
+			<fieldset id="display-settings-fieldset">
+				<legend>ESP32 display (global)</legend>
+				<div id="display-pin-gate" class="display-pin-gate" hidden>
+					<p>Display settings are PIN-protected.</p>
+					<button type="button" id="display-pin-unlock-btn" class="primary">Enter PIN to unlock</button>
+				</div>
+				<p class="settings-hint">Applies to all displays using host settings. Saved to <code>display_config.json</code>.</p>
+				<div class="display-preview-toolbar">
+					<div class="display-preview-orient">
+						<label><input type="radio" name="display-preview-orient" value="portrait" checked> Portrait</label>
+						<label><input type="radio" name="display-preview-orient" value="landscape"> Landscape</label>
+					</div>
+				</div>
+				<div id="display-theme-swatches" class="display-theme-swatches"></div>
+				<div id="display-layout-gallery" class="display-layout-gallery"></div>
+				<div class="display-config-grid">
+					<label>Layout
+						<select id="display-glance-layout">
+							<option value="0">Classic</option>
+							<option value="1">Compact</option>
+							<option value="2">Ring</option>
+							<option value="3">Bars</option>
+							<option value="4">Flow</option>
+						</select>
+					</label>
+					<label>Theme
+						<select id="display-theme-id">
+							<option value="0">Dark</option>
+							<option value="1">Light</option>
+							<option value="2">Solar</option>
+							<option value="3">Ocean</option>
+							<option value="4">Forest</option>
+						</select>
+					</label>
+					<label>Rotation
+						<select id="display-rotation">
+							<option value="0">Portrait</option>
+							<option value="1">Landscape</option>
+							<option value="2">Portrait (flip)</option>
+							<option value="3">Landscape (flip)</option>
+						</select>
+					</label>
+					<label>Brightness
+						<input type="number" id="display-brightness" min="0" max="255" value="200">
+					</label>
+					<label>Poll (ms)
+						<input type="number" id="display-poll-ms" min="2000" max="60000" value="5000">
+					</label>
+				</div>
+				<label><input type="checkbox" id="display-grid-alert" checked> Grid offline alert</label>
+				<label><input type="checkbox" id="display-check-update"> Check for firmware updates</label>
+				<label><input type="checkbox" id="display-auto-update"> Auto-install updates</label>
+				<label>Settings PIN (4 digits, blank = off)
+					<input type="password" id="display-settings-pin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" placeholder="••••">
+				</label>
+				<p class="settings-hint">When set, the PIN is required to open display settings on the web dashboard and on each ESP32 (Settings tab and device web UI).</p>
+				<div class="display-ota-row">
+					<button type="button" id="display-save-btn" class="primary">Save display config</button>
+					<button type="button" id="display-check-update-btn">Check updates</button>
+					<button type="button" id="display-force-update-btn">Force install</button>
+				</div>
+				<p id="display-ota-status" class="display-ota-status"></p>
+				<p id="display-save-status" class="settings-hint"></p>
 			</fieldset>
 			<div class="dash-settings-actions">
 				<button type="button" id="dash-settings-save" class="primary">Save</button>

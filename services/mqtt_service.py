@@ -49,7 +49,8 @@ class MqttService:
         self._thread: threading.Thread = None
         self.stop_event = threading.Event()
         self._discovered_instances = set()
-        self.bridge_device_name = "Solar Monitor Bridge"
+        self.bridge_device_name = getattr(app_state, "system_title", None) or "Solar Monitor Bridge"
+
         self.bridge_unique_id = "solar_monitor_bridge"
         self._is_connected = threading.Event()
         self._reconnect_delay = 1

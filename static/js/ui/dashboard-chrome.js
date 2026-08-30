@@ -4,6 +4,7 @@
 import { SDK } from '../config.js';
 import { formatNum, getCookie, setCookie, showToast } from '../utils.js';
 import { THEMES, applyThemeId, resolveThemeId } from './themes.js';
+import { initDisplaySettings, loadDisplayConfig } from './display-settings.js';
 
 const STORAGE_KEY = 'solar_dash_prefs_v1';
 const ALERT_HISTORY_KEY = 'solar_dash_alert_history_v1';
@@ -441,6 +442,7 @@ function setSettingsOpen(open) {
 	if (backdrop) backdrop.hidden = !open;
 	document.body.classList.toggle('settings-open', open);
 	if (open) fillSettingsForm();
+	if (open) loadDisplayConfig();
 }
 
 /**
@@ -451,6 +453,7 @@ export function initDashboardChrome() {
 	applyWeatherOverrides();
 	applyPanelVisibility();
 	renderThemePicker();
+	initDisplaySettings();
 	setKioskMode(prefs.kiosk);
 
 	if (ageTimer) clearInterval(ageTimer);

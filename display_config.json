@@ -1,0 +1,13 @@
+{
+  "config_rev": 1,
+  "glance_layout": 0,
+  "theme": 0,
+  "rotation": 0,
+  "brightness": 200,
+  "poll_ms": 5000,
+  "check_for_update": false,
+  "auto_install_update": false,
+  "grid_offline_alert": true,
+  "force_update": false,
+  "force_update_version": ""
+}

@@ -1,0 +1,38 @@
+# Build ESP32 display firmware for the monorepo copy (esp32_display/).
+# Canonical firmware repo: https://github.com/jcvsite/Solar-monitoring-viewer-esp32
+name: ESP32 display firmware
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "esp32_display/**"
+      - ".github/workflows/esp32-display-firmware.yml"
+    branches: [main, master]
+  pull_request:
+    paths:
+      - "esp32_display/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: esp32_display
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO
+        run: pip install -U platformio
+      - name: Build
+        run: pio run
+      - name: Package webflash firmware
+        run: bash scripts/prepare_webflash.sh
+      - name: Upload webflash bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: solar-glance-webflash
+          path: |
+            esp32_display/webflash/

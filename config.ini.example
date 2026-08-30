@@ -21,6 +21,10 @@ PLUGIN_INSTANCES = INV_Solis
 # How often each plugin attempts a full data poll (in seconds).
 POLL_INTERVAL = 5
 
+# User-facing title for web, console, ESP32 display, and default mDNS name.
+# Leave empty or omit to use "Solar Monitoring".
+SYSTEM_TITLE = Solar Monitoring
+
 # Your local timezone identifier for correct timestamps.
 # Examples: "UTC", "Europe/London", "America/New_York", "Asia/Shanghai"
 # See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
@@ -348,6 +352,15 @@ ENABLE_HTTPS = false
 WEB_UPDATE_INTERVAL = 2.0
 # Secret key for Flask session management. CHANGE THIS to a long, random string!
 FLASK_SECRET_KEY = "CHANGE_THIS_TO_A_LONG_RANDOM_SECRET_STRING_FOR_SECURITY"
+# Optional bearer/query token for /api/display* endpoints (ESP32 glance). Empty = open on LAN.
+# DISPLAY_API_TOKEN =
+# GitHub PAT for private Solar-monitoring-viewer-esp32 release proxy (OTA firmware download).
+# DISPLAY_GITHUB_TOKEN =
+# Advertise on LAN via mDNS (_solar-monitoring._tcp) for ESP32 / future HA discovery.
+ENABLE_MDNS = true
+MDNS_HOSTNAME = solar-monitoring
+# Leave blank to use SYSTEM_TITLE as the mDNS instance name.
+# MDNS_INSTANCE_NAME =
 
 [WEATHER]
 ; Enable or disable the weather widget on the dashboard
