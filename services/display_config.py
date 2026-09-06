@@ -217,18 +217,31 @@ def download_firmware_bytes(token: str = "", version: str = "") -> Tuple[Optiona
     asset_url = release.get("asset_url")
     asset_name = release.get("asset_name") or "firmware.bin"
     if version and version.strip() and version.strip() != release.get("tag"):
-        tag = version.strip().lstrip("v")
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{version.strip()}"
-        try:
-            rel = _github_request(url, token)
-            for asset in rel.get("assets") or []:
-                name = str(asset.get("name") or "")
-                if name.endswith(".bin"):
-                    asset_url = asset.get("browser_download_url")
-                    asset_name = name
+        raw = version.strip()
+        candidates = [raw]
+        if raw.startswith(("v", "V")):
+            candidates.append(raw[1:])
+        else:
+            candidates.append("v" + raw)
+        last_exc: Optional[Exception] = None
+        found = False
+        for cand in candidates:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{cand}"
+            try:
+                rel = _github_request(url, token)
+                for asset in rel.get("assets") or []:
+                    name = str(asset.get("name") or "")
+                    if name.endswith(".bin"):
+                        asset_url = asset.get("browser_download_url")
+                        asset_name = name
+                        found = True
+                        break
+                if found:
                     break
-        except Exception as exc:
-            return None, None, str(exc)
+            except Exception as exc:
+                last_exc = exc
+        if not found and last_exc is not None:
+            return None, None, str(last_exc)
     if not asset_url:
         return None, None, "No firmware asset in release"
     headers = {"User-Agent": "solar-monitoring-display-proxy"}
