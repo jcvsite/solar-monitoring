@@ -1,4 +1,5 @@
 #include "ui_theme.h"
+#include "../fonts/lv_font_soc_73.h"
 #include <math.h>
 
 lv_style_t uiStyleScreen;
@@ -12,7 +13,7 @@ lv_style_t uiStyleAccent;
 static const lv_font_t* s_fontBody = &lv_font_montserrat_16;
 static const lv_font_t* s_fontTitle = &lv_font_montserrat_16;
 static const lv_font_t* s_fontDisplay = &lv_font_montserrat_20;
-static const lv_font_t* s_fontSoc = &lv_font_montserrat_48;
+static const lv_font_t* s_fontSoc = &lv_font_soc_73;
 
 lv_color_t uiColor565(uint16_t c) {
   const uint8_t r = (uint8_t)(((c >> 11) & 0x1F) << 3);

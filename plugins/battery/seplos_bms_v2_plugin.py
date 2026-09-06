@@ -1125,40 +1125,88 @@ class SeplosBMSV2(BMSPluginBase):
             )
             return None
 
+        # --- Determine charge state from telesignalization flags (authoritative) ---
+        # Seplos BMS provides battery wattage via telemetry registers.
+        # The telesignalization bit flags (byte 38) are the ONLY reliable source for
+        # charge/discharge/floating direction — do NOT use current polarity or
+        # manipulate BATTERY_POWER_WATTS / BATTERY_CURRENT_AMPS sign.
         status_dict = all_bms_data_nested.get(BMS_KEY_STATUS_TEXT, {})
         final_status_text = status_dict.get("value", "Unknown") if isinstance(status_dict, dict) else "Unknown"
 
-        if "idle" in final_status_text.lower():
-            current_dict = all_bms_data_nested.get(BMS_KEY_CURRENT, {})
-            bms_current = current_dict.get("value", 0) if isinstance(current_dict, dict) else 0
-            if isinstance(bms_current, (int, float)):
-                if bms_current > 0.5: final_status_text = "Charging"
-                elif bms_current < -0.5: final_status_text = "Discharging"
-                else: final_status_text = "Idle"
-        
-        all_bms_data_nested[BMS_KEY_STATUS_TEXT] = {"value": final_status_text, "unit": None}
-        
-        standardized_data = self.standardize_bms_keys(all_bms_data_nested)
-        
-        power_key, current_key = StandardDataKeys.BATTERY_POWER_WATTS, StandardDataKeys.BATTERY_CURRENT_AMPS
-        
-        if power_key in standardized_data and isinstance(standardized_data.get(power_key), (int, float)):
-            standardized_data[power_key] *= -1
-        
-        if current_key in standardized_data and isinstance(standardized_data.get(current_key), (int, float)):
-            standardized_data[current_key] *= -1
+        discharge_flag_on = all_bms_data_nested.get("discharge_status_flag", {}).get("value") == "discharging"
+        charge_flag_on = all_bms_data_nested.get("charge_status_flag", {}).get("value") == "charging"
+        floating_flag_on = all_bms_data_nested.get("floating_charge_status_flag", {}).get("value") == "floating"
 
-        power_val_final = standardized_data.get(power_key)
-        # Only overwrite the status if it's generic, preserving detailed statuses like "Protection"
-        current_status = standardized_data.get(StandardDataKeys.BATTERY_STATUS_TEXT, "Unknown")
-        if current_status in ["Idle", "Charging", "Discharging", "Unknown", "Standby"]:
-            if isinstance(power_val_final, (int, float)):
-                if power_val_final > 10:
-                    standardized_data[StandardDataKeys.BATTERY_STATUS_TEXT] = "Discharging"
-                elif power_val_final < -10:
-                    standardized_data[StandardDataKeys.BATTERY_STATUS_TEXT] = "Charging"
-                else:
-                    standardized_data[StandardDataKeys.BATTERY_STATUS_TEXT] = "Idle"
+        # Determine charge state purely from telesign flags.
+        # Protection / warning statuses take priority and are preserved verbatim.
+        has_protection = ("protection" in final_status_text.lower()
+                          or "warning" in final_status_text.lower()
+                          or "failure" in final_status_text.lower())
+
+        if has_protection:
+            # Preserve detailed protection/warning text; derive charge state from flags
+            if charge_flag_on:
+                derived_charge = "charging"
+            elif discharge_flag_on:
+                derived_charge = "discharging"
+            elif floating_flag_on:
+                derived_charge = "floating"
+            else:
+                derived_charge = "unknown"
+        elif charge_flag_on:
+            final_status_text = "Charging"
+            derived_charge = "charging"
+        elif discharge_flag_on:
+            final_status_text = "Discharging"
+            derived_charge = "discharging"
+        elif floating_flag_on:
+            final_status_text = "Floating"
+            derived_charge = "floating"
+        elif "standby" in final_status_text.lower():
+            final_status_text = "Standby"
+            derived_charge = "idle"
+        else:
+            # No charge/discharge/floating flag set — battery is idle.
+            # Seplos reports current as magnitude-only, so never use current polarity
+            # to guess charge/discharge direction (that was the bug).
+            final_status_text = "Idle"
+            derived_charge = "idle"
+
+        all_bms_data_nested[BMS_KEY_STATUS_TEXT] = {"value": final_status_text, "unit": None}
+
+        standardized_data = self.standardize_bms_keys(all_bms_data_nested)
+
+        # Direction is authoritative from telesign (byte 38). Seplos telemetry current
+        # polarity is unreliable for charge/discharge, so apply framework sign from tele:
+        # +ve DISCHARGING, -ve CHARGING (see StandardDataKeys / derive_battery_charge_state).
+        standardized_data[StandardDataKeys.BATTERY_CHARGE_STATE] = derived_charge
+        standardized_data[StandardDataKeys.BATTERY_STATUS_TEXT] = final_status_text
+
+        power_key = StandardDataKeys.BATTERY_POWER_WATTS
+        current_key = StandardDataKeys.BATTERY_CURRENT_AMPS
+        if derived_charge == "discharging":
+            sign = 1
+        elif derived_charge in ("charging", "floating"):
+            sign = -1
+        else:
+            sign = None
+
+        if sign is not None:
+            curr = standardized_data.get(current_key)
+            if isinstance(curr, (int, float)):
+                standardized_data[current_key] = abs(curr) * sign
+            pwr = standardized_data.get(power_key)
+            if isinstance(pwr, (int, float)):
+                standardized_data[power_key] = abs(pwr) * sign
+        else:
+            # No tele charge/discharge flag: Seplos raw polarity is opposite the
+            # framework convention (+discharge / -charge), so invert as fallback.
+            curr = standardized_data.get(current_key)
+            if isinstance(curr, (int, float)):
+                standardized_data[current_key] = -curr
+            pwr = standardized_data.get(power_key)
+            if isinstance(pwr, (int, float)):
+                standardized_data[power_key] = -pwr
 
         self.latest_data_cache = standardized_data.copy()
         return self.latest_data_cache

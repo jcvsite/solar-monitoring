@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.app_state import AppState
-from plugins.plugin_interface import StandardDataKeys
+from plugins.plugin_interface import StandardDataKeys, derive_battery_charge_state
 from utils.helpers import STATUS_NA
 
 DISPLAY_APP_ID = "solar-monitoring"
@@ -234,6 +234,15 @@ def build_display_payload(app_state: AppState, packet: Optional[dict] = None) ->
     if batt_time == STATUS_NA:
         batt_time = None
 
+    batt_power = _num(_unwrap(packet, StandardDataKeys.BATTERY_POWER_WATTS))
+    batt_status = _str(_unwrap(packet, StandardDataKeys.BATTERY_STATUS_TEXT))
+    batt_plugin_charge_state = _str(_unwrap(packet, StandardDataKeys.BATTERY_CHARGE_STATE))
+    # Prefer plugin-emitted charge state (e.g. Seplos telesign flags) over power-sign guess.
+    if batt_plugin_charge_state and batt_plugin_charge_state in ("charging", "discharging", "idle", "floating", "unknown"):
+        batt_charge_state = batt_plugin_charge_state
+    else:
+        batt_charge_state = derive_battery_charge_state(batt_power, batt_status)
+
     return {
         "ok": bool(ready),
         "app": DISPLAY_APP_ID,
@@ -245,8 +254,9 @@ def build_display_payload(app_state: AppState, packet: Optional[dict] = None) ->
         "tz_offset_sec": _tz_offset_seconds(app_state.local_tzinfo),
         "weather": _fetch_weather_cached(app_state),
         "soc": _num(_unwrap(packet, StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT)),
-        "batt_w": _num(_unwrap(packet, StandardDataKeys.BATTERY_POWER_WATTS)),
-        "batt_status": _str(_unwrap(packet, StandardDataKeys.BATTERY_STATUS_TEXT)),
+        "batt_w": batt_power,
+        "batt_status": batt_status,
+        "battery_charge_state": batt_charge_state,
         "batt_time": batt_time,
         "pv_w": _num(_unwrap(packet, StandardDataKeys.PV_TOTAL_DC_POWER_WATTS)),
         "load_w": _num(_unwrap(packet, StandardDataKeys.LOAD_TOTAL_POWER_WATTS)),
@@ -257,7 +267,8 @@ def build_display_payload(app_state: AppState, packet: Optional[dict] = None) ->
         "load_today_kwh": _num(_unwrap(packet, StandardDataKeys.ENERGY_LOAD_DAILY_KWH)),
         "status": _str(_unwrap(packet, StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT)),
         "alerts": _alerts_present(packet),
-        "inv_temp_c": _num(_unwrap(packet, StandardDataKeys.OPERATIONAL_INVERTER_TEMPERATURE_CELSIUS)),
+        "inv_temp_c": _num(_unwrap(packet, StandardDataKeys.OPERATIONAL_INVERTER_TEMPERATURE_CELSIUS))
+        or _num(_unwrap(packet, StandardDataKeys.BMS_CELL_TEMPERATURE_AVERAGE_CELSIUS)),
         "batt_temp_c": _num(_unwrap(packet, StandardDataKeys.BATTERY_TEMPERATURE_CELSIUS))
         or _num(_unwrap(packet, StandardDataKeys.BMS_CELL_TEMPERATURE_AVERAGE_CELSIUS)),
     }
@@ -293,6 +304,15 @@ def build_bms_payload(app_state: AppState, packet: Optional[dict] = None) -> Dic
 
     has_bms = any(v is not None for v in (soc, volts, cell_count_i)) or bool(cell_voltages)
 
+    batt_power = _num(_unwrap(packet, StandardDataKeys.BATTERY_POWER_WATTS))
+    batt_status = _str(_unwrap(packet, StandardDataKeys.BATTERY_STATUS_TEXT))
+    batt_plugin_charge_state = _str(_unwrap(packet, StandardDataKeys.BATTERY_CHARGE_STATE))
+    # Prefer plugin-emitted charge state (e.g. Seplos telesign flags) over power-sign guess.
+    if batt_plugin_charge_state and batt_plugin_charge_state in ("charging", "discharging", "idle", "floating", "unknown"):
+        batt_charge_state = batt_plugin_charge_state
+    else:
+        batt_charge_state = derive_battery_charge_state(batt_power, batt_status)
+
     return {
         "ok": has_bms,
         "app": DISPLAY_APP_ID,
@@ -301,8 +321,9 @@ def build_bms_payload(app_state: AppState, packet: Optional[dict] = None) -> Dic
         "soh": _num(_unwrap(packet, StandardDataKeys.BATTERY_STATE_OF_HEALTH_PERCENT)),
         "volts": volts,
         "amps": _num(_unwrap(packet, StandardDataKeys.BATTERY_CURRENT_AMPS)),
-        "watts": _num(_unwrap(packet, StandardDataKeys.BATTERY_POWER_WATTS)),
-        "status": _str(_unwrap(packet, StandardDataKeys.BATTERY_STATUS_TEXT)),
+        "watts": batt_power,
+        "status": batt_status,
+        "battery_charge_state": batt_charge_state,
         "temp_min": _num(_unwrap(packet, StandardDataKeys.BMS_TEMP_MIN_CELSIUS))
         or _num(_unwrap(packet, StandardDataKeys.BMS_CELL_TEMPERATURE_MIN_CELSIUS)),
         "temp_max": _num(_unwrap(packet, StandardDataKeys.BMS_TEMP_MAX_CELSIUS))

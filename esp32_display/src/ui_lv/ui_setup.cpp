@@ -144,16 +144,50 @@ void uiSetupPickList(const char* title, const char* const* names, int count, int
   s_screen = lv_obj_create(NULL);
   lv_obj_add_style(s_screen, &uiStyleScreen, 0);
   lv_obj_set_size(s_screen, LV_HOR_RES, LV_VER_RES);
-  uiMakeLabel(s_screen, title, uiFontTitle(), uiColor565(t.text));
-  lv_obj_align(lv_obj_get_child(s_screen, 0), LV_ALIGN_TOP_MID, 0, 8);
+  lv_obj_clear_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
-  lv_obj_t* list = lv_list_create(s_screen);
-  lv_obj_set_size(list, LV_PCT(95), LV_PCT(75));
-  lv_obj_align(list, LV_ALIGN_CENTER, 0, 10);
+  uiMakeLabel(s_screen, title, uiFontTitle(), uiColor565(t.text));
+  lv_obj_align(lv_obj_get_child(s_screen, 0), LV_ALIGN_TOP_MID, 0, 6);
+
+  // Custom rows instead of lv_list + CHECKED (CHECKED drew a broken "x"/glyph with our fonts).
+  lv_obj_t* list = lv_obj_create(s_screen);
+  lv_obj_remove_style_all(list);
+  lv_obj_set_size(list, LV_PCT(94), LV_PCT(78));
+  lv_obj_align(list, LV_ALIGN_BOTTOM_MID, 0, -4);
+  lv_obj_set_style_bg_color(list, uiColor565(t.bg), 0);
+  lv_obj_set_style_bg_opa(list, LV_OPA_COVER, 0);
+  lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(list, 4, 0);
+  lv_obj_set_style_pad_all(list, 4, 0);
+  lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_set_scroll_dir(list, LV_DIR_VER);
+
   for (int i = 0; i < count; i++) {
-    lv_obj_t* btn = lv_list_add_btn(list, NULL, names[i]);
-    if (i == selected) lv_obj_add_state(btn, LV_STATE_CHECKED);
+    const bool on = (i == selected);
+    lv_obj_t* btn = lv_btn_create(list);
+    lv_obj_remove_style_all(btn);
+    lv_obj_set_width(btn, LV_PCT(100));
+    lv_obj_set_height(btn, 36);
+    lv_obj_set_style_radius(btn, 8, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, uiColor565(on ? t.panel : t.card), 0);
+    lv_obj_set_style_border_width(btn, on ? 2 : 1, 0);
+    lv_obj_set_style_border_color(btn, uiColor565(on ? t.charge : t.line), 0);
+    lv_obj_set_style_pad_hor(btn, 10, 0);
     lv_obj_add_event_cb(btn, pickItem, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+
+    lv_obj_t* row = lv_obj_create(btn);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
+
+    // Plain ASCII marker — no LVGL symbol font required.
+    uiMakeLabel(row, on ? "[*]" : "[ ]", uiFontBody(), uiColor565(on ? t.charge : t.muted));
+    uiMakeLabel(row, names[i], uiFontBody(), uiColor565(t.text));
   }
   lv_scr_load(s_screen);
 }

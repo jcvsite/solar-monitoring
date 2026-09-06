@@ -13,10 +13,12 @@
 #include "api_client.h"
 #include "discovery.h"
 #include "touch_input.h"
+#include "lvgl_port.h"
+#include "host_poll.h"
 #include "ui.h"
 #include "ui_lv.h"
 #include "ui_lv/ui_actions.h"
-#include "lvgl_port.h"
+#include "ui_lv/ui_shell.h"
 #include "theme.h"
 #include "layout.h"
 #include "git_ota.h"
@@ -48,6 +50,7 @@ uint32_t lastAnim = 0;
 String statusMsg = "Boot";
 String otaStatus = "Ready";
 bool needRedraw = true;
+static bool s_pollAfterUi = false;
 std::vector<DiscoveredHost> found;
 int foundIndex = 0;
 uint8_t manualOctets[4] = {192, 168, 1, 240};
@@ -81,6 +84,7 @@ static void refreshCurrentPage();
 static void handleUiAction(UiActionId id, const UiActionCtx& ctx);
 static void openSettingsPage();
 static void applyScreenRotation();
+static uint32_t s_lastLocalRotateMs = 0;
 static void startHostDiscovery();
 static void openManualHost();
 static void startWifiScan();
@@ -160,8 +164,9 @@ static void handleUiAction(UiActionId id, const UiActionCtx& ctx) {
       settingsPinUnlocked = false;
       page = ctx.page;
       settingsTab = UiSettingsTab::Connection;
-      pollIfDue(true);
+      // Paint first — never block the tap handler on HTTP (was up to 4s freeze).
       needRedraw = true;
+      s_pollAfterUi = true;
       break;
     case UiActionId::OpenSettings:
       openSettingsPage();
@@ -179,13 +184,18 @@ static void handleUiAction(UiActionId id, const UiActionCtx& ctx) {
       page = UiPage::Settings;
       needRedraw = true;
       break;
-    case UiActionId::RotateScreen:
+    case UiActionId::RotateScreen: {
+      static uint32_t lastRotBtn = 0;
+      if (millis() - lastRotBtn < 750) break;
+      lastRotBtn = millis();
+      s_lastLocalRotateMs = millis();
       settings.screenRotation = (settings.screenRotation + 1) & 3;
       store.save(settings);
       applyScreenRotation();
       statusMsg = rotationLabel(settings.screenRotation);
       needRedraw = true;
       break;
+    }
     case UiActionId::OpenPinSet:
       page = UiPage::PinSet;
       pinSetPhase = 0;
@@ -608,8 +618,8 @@ static void openSettingsPage() {
   page = UiPage::Settings;
   settingsTab = UiSettingsTab::Connection;
   settingsPinUnlocked = true;
-  pollIfDue(true);
   needRedraw = true;
+  s_pollAfterUi = true;
 }
 
 static void handlePinPadCommon(bool forSet) {
@@ -683,9 +693,14 @@ static void applyHostSettingsFromConfig(const DisplayConfig& cfg) {
     changed = true;
   }
   if (settings.screenRotation != cfg.rotation) {
-    settings.screenRotation = cfg.rotation;
-    applyScreenRotation();
-    changed = true;
+    // Don't yank orientation right after a local rotate (stops portrait/landscape fight).
+    if (s_lastLocalRotateMs != 0 && millis() - s_lastLocalRotateMs < 120000) {
+      // keep local
+    } else {
+      settings.screenRotation = cfg.rotation;
+      applyScreenRotation();
+      changed = true;
+    }
   }
   if (settings.brightness != cfg.brightness) {
     settings.brightness = cfg.brightness;
@@ -737,47 +752,44 @@ static void pollDisplayConfig(bool force) {
   }
 }
 
+static void applyHostPollResults() {
+  GlanceData g;
+  if (hostPollTakeGlance(g)) {
+    if (g.tz_offset_sec >= -43200 && g.tz_offset_sec <= 50400) {
+      ui.syncClockTimezone(g.tz_offset_sec);
+    }
+    bool headerChanged = (g.clock != glance.clock) || (g.weather_enabled != glance.weather_enabled) ||
+                         (g.weather_code != glance.weather_code) || (g.weather_temp != glance.weather_temp);
+    if (!glanceVisualEqual(glance, g)) {
+      glance = g;
+      needRedraw = true;
+    } else {
+      glance = g;
+      if (page == UiPage::Glance && headerChanged) ui.refreshHeaderTime(glance);
+    }
+    lastGood = millis();
+  }
+  BmsData b;
+  if (hostPollTakeBms(b)) {
+    bms = b;
+    lastGood = millis();
+    if (page == UiPage::Bms) needRedraw = true;
+  }
+  HistoryData h;
+  if (hostPollTakeHistory(h)) {
+    history = h;
+    lastGood = millis();
+    if (page == UiPage::History) needRedraw = true;
+  }
+}
+
 static void pollIfDue(bool force) {
   if (!force && millis() - lastPoll < settings.pollMs) return;
+  if (!force && hostPollBusy()) return;
   lastPoll = millis();
   if (settings.hostIp.length() == 0 || WiFi.status() != WL_CONNECTED) return;
-
-  if (page == UiPage::Glance || force) {
-    GlanceData g;
-    if (api.fetchGlance(settings.hostIp, settings.hostPort, settings.token, g)) {
-      if (g.tz_offset_sec >= -43200 && g.tz_offset_sec <= 50400) {
-        ui.syncClockTimezone(g.tz_offset_sec);
-      }
-      bool headerChanged = (g.clock != glance.clock) || (g.weather_enabled != glance.weather_enabled) ||
-                           (g.weather_code != glance.weather_code) || (g.weather_temp != glance.weather_temp);
-      if (force || !glanceVisualEqual(glance, g)) {
-        glance = g;
-        needRedraw = true;
-      } else {
-        glance = g;
-        if (page == UiPage::Glance && headerChanged) {
-          ui.refreshHeaderTime(glance);
-        }
-      }
-      lastGood = millis();
-    }
-  }
-  if (page == UiPage::Bms) {
-    BmsData b;
-    if (api.fetchBms(settings.hostIp, settings.hostPort, settings.token, b)) {
-      bms = b;
-      lastGood = millis();
-      needRedraw = true;
-    }
-  }
-  if (page == UiPage::History) {
-    HistoryData h;
-    if (api.fetchHistory(settings.hostIp, settings.hostPort, settings.token, 24, h)) {
-      history = h;
-      lastGood = millis();
-      needRedraw = true;
-    }
-  }
+  // Non-blocking: FreeRTOS worker does HTTP; UI just applies results later.
+  hostPollRequest(page, force);
 }
 
 void setup() {
@@ -785,12 +797,15 @@ void setup() {
   delay(200);
   store.begin();
   settings = store.load();
+  hostPollBegin(&api, &settings);
 
   themeSetActive(settings.themeId);
   touchInputBegin();
 
   tft.init();
-  applyScreenRotation();
+  settings.screenRotation = (uint8_t)constrain(settings.screenRotation, (int)0, (int)3);
+  tft.setRotation(settings.screenRotation);
+  touchInputSetRotation(settings.screenRotation);
   setBrightness(settings.brightness);
   ui.begin(tft, settings.screenRotation);
   ui.setTheme(settings.themeId);
@@ -838,11 +853,20 @@ void setup() {
 void loop() {
   ui.tick();
 
+  const int swipe = lvglPortConsumeSwipe();
+  if (swipe != 0) {
+    uiShellSwipePage(swipe);
+  }
+
   if (gDeviceWebSaved) {
     gDeviceWebSaved = false;
+    const uint8_t prevRot = settings.screenRotation;
     settings = deviceWeb.settings();
     store.save(settings);
-    applyScreenRotation();
+    if (settings.screenRotation != prevRot) {
+      s_lastLocalRotateMs = millis();
+      applyScreenRotation();
+    }
     ui.setTheme(settings.themeId);
     setBrightness(settings.brightness);
     needRedraw = true;
@@ -886,9 +910,17 @@ void loop() {
     ui.animateGlanceBattery(glance, millis());
   }
 
+  applyHostPollResults();
+
   if (needRedraw) {
     needRedraw = false;
     refreshCurrentPage();
+    lvglPortResetInput();
+  }
+  // Kick HTTP only after the new page painted (worker task; never blocks UI).
+  if (s_pollAfterUi) {
+    s_pollAfterUi = false;
+    pollIfDue(true);
   }
 
   delay(5);

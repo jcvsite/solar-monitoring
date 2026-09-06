@@ -13,9 +13,18 @@ void UiLv::begin(TFT_eSPI& tft, uint8_t rotation) {
 }
 
 void UiLv::setRotation(uint8_t rotation) {
-  rotation_ = rotation & 3;
+  rotation = rotation & 3;
+  // Tear down only when orientation actually changes (avoids blink loops).
+  if (rotation == rotation_) return;
+  rotation_ = rotation;
   lvglPortSetRotation(rotation_);
-  if (shellActive_) showPage(currentPage_);
+  shellActive_ = false;
+  uiShellDestroy(shell_);
+  uiGlanceDestroy(glance_);
+  bms_ = UiBmsWidgets();
+  history_ = UiHistoryWidgets();
+  settings_ = UiSettingsWidgets();
+  // Do not rebuild here — caller sets needRedraw and refreshCurrentPage once.
 }
 
 void UiLv::setTheme(uint8_t themeId) {
@@ -45,6 +54,7 @@ void UiLv::showWifiPortal(const char* apName) {
 }
 
 void UiLv::rebuildIfNeeded(UiPage page) {
+  lvglPortResetInput();
   currentPage_ = page;
   const bool mainNav = page == UiPage::Glance || page == UiPage::Bms || page == UiPage::History || page == UiPage::Settings;
   if (!shellActive_ || !shell_.root) {
@@ -54,16 +64,19 @@ void UiLv::rebuildIfNeeded(UiPage page) {
     uiSplashDismiss();
     uiLogoRelease();
     shellActive_ = true;
-    if (page == UiPage::Glance) uiGlanceBuild(shell_, glance_, glanceLayout_);
+    if (page == UiPage::Glance) uiGlanceBuild(shell_, glance_, glanceLayout_, isLandscape(rotation_));
     else if (page == UiPage::Bms) uiBmsBuild(shell_, bms_);
     else if (page == UiPage::History) uiHistoryBuild(shell_, history_);
     else if (page == UiPage::Settings) { /* built in updateSettings */ }
   } else {
     uiShellSetPage(shell_, page);
-    if (page == UiPage::Glance) uiGlanceBuild(shell_, glance_, glanceLayout_);
-    else if (page == UiPage::Bms) uiBmsBuild(shell_, bms_);
+    if (page == UiPage::Glance) {
+      if (uiGlanceNeedsBuild(glance_, glanceLayout_, isLandscape(rotation_)))
+        uiGlanceBuild(shell_, glance_, glanceLayout_, isLandscape(rotation_));
+    } else if (page == UiPage::Bms) uiBmsBuild(shell_, bms_);
     else if (page == UiPage::History) uiHistoryBuild(shell_, history_);
   }
+  lvglPortResetInput();
 }
 
 void UiLv::showPage(UiPage page) {
@@ -87,7 +100,7 @@ void UiLv::updateGlance(const GlanceData& g, bool stale, bool gridAlert, uint8_t
   glanceLayout_ = layoutId;
   showPage(UiPage::Glance);
   if (!shell_.root) return;
-  if (uiGlanceNeedsBuild(glance_, layoutId)) uiGlanceBuild(shell_, glance_, layoutId);
+  if (uiGlanceNeedsBuild(glance_, layoutId, isLandscape(rotation_))) uiGlanceBuild(shell_, glance_, layoutId, isLandscape(rotation_));
   uiShellSetPage(shell_, UiPage::Glance);
   uiShellSetGlanceHeader(shell_, g);
   uiGlanceUpdate(glance_, g, stale, gridAlert, layoutId);

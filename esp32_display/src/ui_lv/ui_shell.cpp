@@ -5,10 +5,13 @@
 #include "config.h"
 #include "layout.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
+#include "ui_splash.h"
 
 static bool s_clockStarted = false;
 static int s_activeTzOffset = TIMEZONE_OFFSET_SEC;
+static UiPage s_navPage = UiPage::Glance;
 
 void uiClockEnsure() {
   if (s_clockStarted) return;
@@ -125,8 +128,8 @@ void uiShellSetGlanceHeader(UiShellWidgets& w, const GlanceData& g) {
   }
 }
 
-static void navClicked(lv_event_t* e) {
-  const int idx = (int)(intptr_t)lv_event_get_user_data(e);
+static void fireNavIndex(int idx) {
+  if (idx < 0 || idx > 3) return;
   UiActionCtx ctx;
   ctx.index = idx;
   if (idx == 3) {
@@ -137,8 +140,21 @@ static void navClicked(lv_event_t* e) {
   }
 }
 
+static void navClicked(lv_event_t* e) {
+  fireNavIndex((int)(intptr_t)lv_event_get_user_data(e));
+}
+
+void uiShellSwipePage(int direction) {
+  if (direction == 0) return;
+  int idx = uiShellNavIndex(s_navPage);
+  if (idx < 0) return;
+  idx += (direction < 0) ? 1 : -1;
+  fireNavIndex(idx);
+}
+
 void uiShellCreate(UiShellWidgets& w, UiPage page, bool showNav, uint8_t rotation) {
   uiShellDestroy(w);
+  s_navPage = page;
   const ThemePalette& t = themeActive();
   const lv_coord_t sw = (lv_coord_t)scrW(rotation);
   const lv_coord_t sh = (lv_coord_t)scrH(rotation);
@@ -190,6 +206,7 @@ void uiShellCreate(UiShellWidgets& w, UiPage page, bool showNav, uint8_t rotatio
   lv_obj_set_flex_flow(w.content, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(w.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
   lv_obj_clear_flag(w.content, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_clear_flag(w.content, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
   if (showNav) {
     w.nav = lv_obj_create(w.root);
@@ -206,17 +223,20 @@ void uiShellCreate(UiShellWidgets& w, UiPage page, bool showNav, uint8_t rotatio
     lv_obj_set_style_pad_all(w.nav, 2, 0);
     lv_obj_clear_flag(w.nav, LV_OBJ_FLAG_SCROLLABLE);
 
-    static const char* icons[] = {LV_SYMBOL_HOME, LV_SYMBOL_BATTERY_FULL, LV_SYMBOL_LIST, LV_SYMBOL_SETTINGS};
+    static const char* labels[] = {"Home", "BMS", "Hist", "Set"};
     const int activeIdx = uiShellNavIndex(page);
+    const lv_coord_t btnW = (sw - 8) / 4;
     for (int i = 0; i < 4; i++) {
       lv_obj_t* btn = lv_btn_create(w.nav);
       lv_obj_remove_style_all(btn);
       lv_obj_add_style(btn, &uiStyleNavBtn, 0);
       lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
-      lv_obj_set_size(btn, (sw - 16) / 4, UI_NAV_H - 4);
+      lv_obj_set_size(btn, btnW, UI_NAV_H - 4);
+      lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
       lv_obj_add_event_cb(btn, navClicked, LV_EVENT_CLICKED, (void*)(intptr_t)i);
-      uiMakeLabel(btn, icons[i], uiFontTitle(), uiColor565(t.dim));
-      lv_obj_center(lv_obj_get_child(btn, 0));
+      lv_obj_t* lbl = uiMakeLabel(btn, labels[i], uiFontBody(), uiColor565(t.dim));
+      lv_obj_center(lbl);
+      uiMakeNonClickable(lbl);
       w.navBtns[i] = btn;
 
       w.navDots[i] = lv_obj_create(btn);
@@ -226,22 +246,46 @@ void uiShellCreate(UiShellWidgets& w, UiPage page, bool showNav, uint8_t rotatio
       lv_obj_set_style_bg_opa(w.navDots[i], LV_OPA_COVER, 0);
       lv_obj_align(w.navDots[i], LV_ALIGN_TOP_MID, 0, 1);
       lv_obj_add_flag(w.navDots[i], LV_OBJ_FLAG_HIDDEN);
+      uiMakeNonClickable(w.navDots[i]);
 
       styleNavBtn(w, i, i == activeIdx);
     }
+    lv_obj_move_foreground(w.nav);
   }
 
+  lv_obj_t* prev = lv_scr_act();
   lv_scr_load(w.root);
+  // Delete previous screen only after new one is active.
+  // Splash has its own lifetime — abandon tracking, don't double-del via uiSplashDismiss.
+  if (prev && prev != w.root) {
+    if (uiSplashOwns(prev)) {
+      uiSplashAbandon();
+      lv_obj_del(prev);
+    } else {
+      lv_obj_del(prev);
+    }
+  }
 }
 
 void uiShellDestroy(UiShellWidgets& w) {
-  if (w.root) {
-    lv_obj_del(w.root);
-    w = UiShellWidgets();
+  if (!w.root) return;
+  lv_obj_t* root = w.root;
+  w = UiShellWidgets();
+  if (lv_scr_act() == root) {
+    lv_obj_t* blank = lv_obj_create(NULL);
+    lv_obj_remove_style_all(blank);
+    lv_obj_set_style_bg_color(blank, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(blank, LV_OPA_COVER, 0);
+    lv_coord_t hor = lv_disp_get_hor_res(nullptr);
+    lv_coord_t ver = lv_disp_get_ver_res(nullptr);
+    lv_obj_set_size(blank, hor, ver);
+    lv_scr_load(blank);
   }
+  lv_obj_del(root);
 }
 
 void uiShellSetPage(UiShellWidgets& w, UiPage page) {
+  s_navPage = page;
   if (!w.nav) return;
   const int activeIdx = uiShellNavIndex(page);
   for (int i = 0; i < 4; i++) {

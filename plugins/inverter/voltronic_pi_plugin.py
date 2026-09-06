@@ -33,7 +33,7 @@ try:
 except ImportError:  # pragma: no cover
     serial = None  # type: ignore
 
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys, parse_config_int, parse_config_str
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state, parse_config_int, parse_config_str
 from plugins.plugin_utils import check_tcp_port
 from plugins.inverter.voltronic_pi_constants import build_command, find_response, parse_qpigs, parse_qmn
 
@@ -185,6 +185,10 @@ class VoltronicPiPlugin(DevicePlugin):
                 StandardDataKeys.LOAD_TOTAL_POWER_WATTS: d.get("ac_power"),
                 StandardDataKeys.BATTERY_POWER_WATTS: batt_p,
                 StandardDataKeys.BATTERY_CURRENT_AMPS: d.get("battery_current"),
+                StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                    batt_p,
+                    "Discharging" if (batt_p or 0) > 50 else "Charging" if (batt_p or 0) < -50 else "Idle",
+                ),
                 StandardDataKeys.BATTERY_VOLTAGE_VOLTS: d.get("battery_voltage"),
                 StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT: d.get("battery_soc"),
                 StandardDataKeys.OPERATIONAL_INVERTER_TEMPERATURE_CELSIUS: d.get("inverter_temp"),

@@ -77,6 +77,7 @@ class TestDisplayApi(unittest.TestCase):
         self.assertEqual(payload["app"], "solar-monitoring")
         self.assertEqual(payload["title"], "Farm Solar")
         self.assertEqual(payload["soc"], 77.5)
+        self.assertEqual(payload["battery_charge_state"], "charging")
         self.assertEqual(payload["grid_state"], "export")
         self.assertEqual(payload["inv_temp_c"], 48.5)
         self.assertEqual(payload["batt_temp_c"], 31.2)
@@ -85,6 +86,27 @@ class TestDisplayApi(unittest.TestCase):
         self.assertIn("timezone", payload)
         self.assertIn("tz_offset_sec", payload)
         self.assertIsNone(payload["weather"])
+
+    def test_battery_charge_state_prefers_plugin_enum(self):
+        packet = {
+            StandardDataKeys.SERVER_TIMESTAMP_MS_UTC: _wrap(int(time.time() * 1000)),
+            StandardDataKeys.BATTERY_POWER_WATTS: _wrap(200),
+            StandardDataKeys.BATTERY_STATUS_TEXT: _wrap("Idle"),
+            StandardDataKeys.BATTERY_CHARGE_STATE: _wrap("floating"),
+            StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT: _wrap(90.0),
+        }
+        payload = build_display_payload(self.app, packet)
+        self.assertEqual(payload["battery_charge_state"], "floating")
+
+    def test_battery_charge_state_from_status_text(self):
+        packet = {
+            StandardDataKeys.SERVER_TIMESTAMP_MS_UTC: _wrap(int(time.time() * 1000)),
+            StandardDataKeys.BATTERY_POWER_WATTS: _wrap(-40),
+            StandardDataKeys.BATTERY_STATUS_TEXT: _wrap("Floating"),
+            StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT: _wrap(95.0),
+        }
+        payload = build_display_payload(self.app, packet)
+        self.assertEqual(payload["battery_charge_state"], "floating")
 
     def test_display_payload_weather_disabled(self):
         self.app.enable_weather_widget = False

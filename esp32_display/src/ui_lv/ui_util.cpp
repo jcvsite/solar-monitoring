@@ -56,6 +56,20 @@ lv_obj_t* uiMakeLabel(lv_obj_t* parent, const char* text, const lv_font_t* font,
   return lbl;
 }
 
+lv_obj_t* uiMakeSymbolLabel(lv_obj_t* parent, const char* symbol, lv_color_t color) {
+  lv_obj_t* lbl = lv_label_create(parent);
+  lv_label_set_text(lbl, symbol ? symbol : "");
+  lv_obj_set_style_text_color(lbl, color, 0);
+  uiMakeNonClickable(lbl);
+  return lbl;
+}
+
+void uiMakeNonClickable(lv_obj_t* obj) {
+  if (!obj) return;
+  lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(obj, LV_OBJ_FLAG_EVENT_BUBBLE);
+}
+
 void uiSetLabelText(lv_obj_t* label, const char* text) {
   if (label) lv_label_set_text(label, text ? text : "");
 }

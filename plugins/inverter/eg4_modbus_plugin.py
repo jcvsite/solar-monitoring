@@ -53,7 +53,7 @@ from .eg4_modbus_constants import (
     EG4_OPERATION_MODES,
     EG4_ALARM_CODES,
 )
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 from enum import Enum
 
@@ -393,6 +393,9 @@ class Eg4ModbusPlugin(DevicePlugin):
         return {
             StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: status_text,
             StandardDataKeys.BATTERY_STATUS_TEXT: batt_status,
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                battery_power, batt_status
+            ),
             StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: d.get("pv1_power", 0) + d.get("pv2_power", 0),
             StandardDataKeys.AC_POWER_WATTS: d.get("inverter_power_r"),
             StandardDataKeys.GRID_TOTAL_ACTIVE_POWER_WATTS: grid_power,

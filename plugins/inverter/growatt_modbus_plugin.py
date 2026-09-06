@@ -51,7 +51,7 @@ from .growatt_modbus_constants import (
     GROWATT_STATUS_CODES,
     GROWATT_STORAGE_WORK_MODES
 )
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 from enum import Enum
 
@@ -401,6 +401,9 @@ class GrowattModbusPlugin(DevicePlugin):
         return {
             StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: status_text,
             StandardDataKeys.BATTERY_STATUS_TEXT: batt_status_txt,
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                battery_power, batt_status_txt
+            ),
             StandardDataKeys.AC_POWER_WATTS: d.get("output_power"),
             StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: pv_power,
             StandardDataKeys.GRID_TOTAL_ACTIVE_POWER_WATTS: d.get("grid_l1_power"),

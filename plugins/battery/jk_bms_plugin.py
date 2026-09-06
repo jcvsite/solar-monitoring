@@ -45,7 +45,7 @@ except ImportError:  # pragma: no cover
 if TYPE_CHECKING:
     from core.app_state import AppState
 
-from plugins.plugin_interface import StandardDataKeys, parse_config_int, parse_config_str
+from plugins.plugin_interface import StandardDataKeys, derive_battery_charge_state, parse_config_int, parse_config_str
 from plugins.plugin_utils import check_tcp_port
 from plugins.battery.bms_plugin_base import (
     BMSPluginBase,
@@ -362,6 +362,10 @@ class JkBmsPlugin(BMSPluginBase):
             BMS_KEY_TEMP_MAX: max(temps) if temps else None,
             BMS_KEY_TEMP_MIN: min(temps) if temps else None,
             BMS_KEY_STATUS_TEXT: decoded.get("status", "Unknown"),
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                decoded.get("power"),
+                decoded.get("status", "Unknown"),
+            ),
             BMS_KEY_CHARGE_FET_ON: decoded.get("charge_fet"),
             BMS_KEY_DISCHARGE_FET_ON: decoded.get("discharge_fet"),
             BMS_KEY_CELLS_BALANCING: balancing,

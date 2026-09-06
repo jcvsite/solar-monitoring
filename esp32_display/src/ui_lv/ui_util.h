@@ -9,5 +9,7 @@ String uiTruncate(const String& s, size_t maxLen);
 
 lv_obj_t* uiMakeCard(lv_obj_t* parent, lv_coord_t w, lv_coord_t h);
 lv_obj_t* uiMakeLabel(lv_obj_t* parent, const char* text, const lv_font_t* font, lv_color_t color);
+lv_obj_t* uiMakeSymbolLabel(lv_obj_t* parent, const char* symbol, lv_color_t color);
+void uiMakeNonClickable(lv_obj_t* obj);
 void uiSetLabelText(lv_obj_t* label, const char* text);
 void uiSetLabelText(lv_obj_t* label, const String& text);

@@ -312,6 +312,7 @@ function renderDashboard(state) {
 			volts: state[SDK.BATTERY_VOLTAGE_VOLTS],
 			amps: state[SDK.BATTERY_CURRENT_AMPS],
 			statusText: state[SDK.BATTERY_STATUS_TEXT],
+			chargeState: state[SDK.BATTERY_CHARGE_STATE],
 			runtimeTextDisplay: state.display_battery_time_remaining,
 			bmsPluginConnectionStatus
 		};

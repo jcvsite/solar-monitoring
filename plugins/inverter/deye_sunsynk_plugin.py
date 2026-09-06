@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from core.app_state import AppState
 
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 from pymodbus.client import ModbusTcpClient, ModbusSerialClient
 from pymodbus.exceptions import ModbusException, ModbusIOException, ConnectionException as ModbusConnectionException
@@ -684,6 +684,9 @@ class DeyeSunsynkPlugin(DevicePlugin):
         standardized_data = {
             StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: status_txt,
             StandardDataKeys.BATTERY_STATUS_TEXT: batt_status,
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                battery_power, batt_status
+            ),
             StandardDataKeys.STATIC_BATTERY_MODEL_NAME: bms_model,
             StandardDataKeys.BATTERY_STATE_OF_HEALTH_PERCENT: to_float_or_zero(raw_data.get("battery_soh")),
             StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: round(pv_power, 2),

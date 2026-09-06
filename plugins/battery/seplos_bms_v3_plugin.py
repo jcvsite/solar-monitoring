@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from core.app_state import AppState
 
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port
 from pymodbus.client import ModbusTcpClient, ModbusSerialClient
 from pymodbus.exceptions import ModbusException, ModbusIOException
@@ -358,22 +358,31 @@ class SeplosBmsV3Plugin(DevicePlugin):
         cell_voltages = [v for v in cell_voltages if isinstance(v, float)]
         
         battery_power = raw_data.get('voltage', 0) * raw_data.get('current', 0)
-        
-        # Determine status text
-        batt_status = "Idle"
+
+        # Determine status text — first check device warnings/alarms.
         alarms = raw_data.get("alarms", [])
         warnings = raw_data.get("warnings", [])
+        batt_status = "Idle"
         if alarms:
             batt_status = f"Protection: {alarms[0]}"
         elif warnings:
             batt_status = f"Warning: {warnings[0]}"
-        elif battery_power > 10: batt_status = "Charging"
-        elif battery_power < -10: batt_status = "Discharging"
 
         # Invert power and current to match our standard (+ discharge, - charge)
         battery_power *= -1
         current = raw_data.get('current', 0) * -1
-        
+
+        # Derive status text from NORMALIZED power (after sign flip), only overriding
+        # when the status is still "Idle" — this preserves any device-reported
+        # protection/warning states.
+        if batt_status == "Idle":
+            if battery_power > 10:
+                batt_status = "Discharging"
+            elif battery_power < -10:
+                batt_status = "Charging"
+            else:
+                batt_status = "Idle"
+
         return {
             StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT: raw_data.get("soc"),
             StandardDataKeys.BATTERY_STATE_OF_HEALTH_PERCENT: raw_data.get("soh"),
@@ -383,6 +392,9 @@ class SeplosBmsV3Plugin(DevicePlugin):
             StandardDataKeys.BATTERY_TEMPERATURE_CELSIUS: raw_data.get("avg_cell_temp"),
             StandardDataKeys.BATTERY_CYCLES_COUNT: raw_data.get("cycle_count"),
             StandardDataKeys.BATTERY_STATUS_TEXT: batt_status,
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                battery_power, batt_status
+            ),
             StandardDataKeys.BMS_CELL_VOLTAGE_MIN_VOLTS: raw_data.get("min_cell_voltage"),
             StandardDataKeys.BMS_CELL_VOLTAGE_MAX_VOLTS: raw_data.get("max_cell_voltage"),
             StandardDataKeys.BMS_CELL_VOLTAGE_AVERAGE_VOLTS: raw_data.get("avg_cell_voltage"),

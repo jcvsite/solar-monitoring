@@ -11,7 +11,7 @@ Local wall/desk display for **[solar-monitoring](https://github.com/jcvsite/sola
 
 > The photo above is an **early design mockup**. Firmware **v0.3.0+** uses **LVGL** for card-based UI aligned with the web dashboard mockups (themes, layouts, animated SOC/grid alert).
 
-**Actual Glance screen — Classic layout (portrait 240×320, LVGL v0.3.1):**
+**Actual Glance screen — Classic layout (portrait 240×320, LVGL v0.3.2):**
 
 ```text
 ┌──────────────────────────────┐

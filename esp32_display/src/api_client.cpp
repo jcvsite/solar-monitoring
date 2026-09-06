@@ -10,7 +10,7 @@ static float jnum(JsonVariantConst v) {
 bool ApiClient::httpGetJson(const String& url, const String& token, JsonDocument& doc) {
   if (WiFi.status() != WL_CONNECTED) return false;
   HTTPClient http;
-  http.setTimeout(4000);
+  http.setTimeout(2000);
   http.begin(url);
   http.addHeader("Accept", "application/json");
   if (token.length()) {
@@ -49,6 +49,7 @@ bool ApiClient::fetchGlance(const String& host, uint16_t port, const String& tok
   out.soc = jnum(doc["soc"]);
   out.batt_w = jnum(doc["batt_w"]);
   out.batt_status = doc["batt_status"] | "";
+  out.battery_charge_state = doc["battery_charge_state"] | "";
   out.batt_time = doc["batt_time"] | "";
   out.pv_w = jnum(doc["pv_w"]);
   out.load_w = jnum(doc["load_w"]);

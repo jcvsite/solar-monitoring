@@ -47,7 +47,7 @@ from .solis_modbus_plugin_constants import (
     MODBUS_EXCEPTION_CODES
 )
 
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.modbus_helper import create_modbus_client, _call_with_slave_compat
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 from utils.helpers import FULLY_OPERATIONAL_STATUSES
@@ -678,6 +678,9 @@ class SolisModbusPlugin(DevicePlugin):
         standardized_data.update({
             StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: status_txt,
             StandardDataKeys.BATTERY_STATUS_TEXT: batt_status_txt,
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                battery_power, batt_status_txt
+            ),
             StandardDataKeys.AC_POWER_WATTS: inverter_power,
             StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: to_float_or_zero(solis_raw_dynamic.get("total_dc_power")),
             StandardDataKeys.GRID_TOTAL_ACTIVE_POWER_WATTS: grid_power,

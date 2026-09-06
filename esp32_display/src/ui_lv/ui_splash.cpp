@@ -56,6 +56,16 @@ void uiSplashDismiss() {
   s_msgLbl = nullptr;
 }
 
+void uiSplashAbandon() {
+  // Screen object already deleted elsewhere (e.g. shell replaced it).
+  s_splash = nullptr;
+  s_msgLbl = nullptr;
+}
+
+bool uiSplashOwns(const lv_obj_t* obj) {
+  return s_splash != nullptr && obj == s_splash;
+}
+
 bool uiSplashIsActive() {
   return s_splash && lv_scr_act() == s_splash;
 }

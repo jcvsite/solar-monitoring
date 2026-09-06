@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
-from plugins.plugin_interface import StandardDataKeys
+from plugins.plugin_interface import StandardDataKeys, derive_battery_charge_state
 from plugins.inverter.modbus_inverter_base import ModbusInverterPluginBase
 from plugins.inverter.felicity_modbus_constants import (
     FELICITY_DYNAMIC,
@@ -89,6 +89,9 @@ class FelicityModbusPlugin(ModbusInverterPluginBase):
             return {
                 StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: "Normal",
                 StandardDataKeys.BATTERY_STATUS_TEXT: self._battery_status_from_power(batt_p),
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                batt_p, self._battery_status_from_power(batt_p)
+            ),
                 StandardDataKeys.AC_POWER_WATTS: d.get("ac_power"),
                 StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: pv,
                 StandardDataKeys.LOAD_TOTAL_POWER_WATTS: d.get("load_power"),

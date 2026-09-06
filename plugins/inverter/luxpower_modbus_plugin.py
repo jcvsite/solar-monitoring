@@ -49,7 +49,7 @@ from .luxpower_modbus_plugin_constants import (
     LUXPOWER_FAULT_CODES, LUXPOWER_WARNING_CODES,
     LUXPOWER_BITFIELD_DEFINITIONS, MODBUS_EXCEPTION_CODES
 )
-from plugins.plugin_interface import DevicePlugin, StandardDataKeys
+from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
 
 ERROR_READ = "read_error"
@@ -499,6 +499,9 @@ class LuxpowerModbusPlugin(DevicePlugin):
         return {
             StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: status_txt,
             StandardDataKeys.BATTERY_STATUS_TEXT: batt_status_txt,
+            StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(
+                -battery_power, batt_status_txt
+            ),
             StandardDataKeys.AC_POWER_WATTS: d.get("inverter_power"),
             StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: d.get("pv1_power", 0) + d.get("pv2_power", 0),
             StandardDataKeys.GRID_TOTAL_ACTIVE_POWER_WATTS: d.get("grid_power"),

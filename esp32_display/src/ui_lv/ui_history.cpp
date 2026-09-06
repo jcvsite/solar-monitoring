@@ -108,7 +108,10 @@ void uiHistoryUpdate(UiHistoryWidgets& h, const HistoryData& data) {
   snprintf(legend, sizeof(legend), LV_SYMBOL_LIST " %dh  PV / Load / SOC", data.hours > 0 ? data.hours : 24);
   uiSetLabelText(h.legend, legend);
 
-  const uint16_t n = (uint16_t)min(data.points.size(), (size_t)48);
+  // Evenly sample across the full window (API may send up to ~120 pts for 24h).
+  // Taking the first N alone only showed the older half of the day.
+  const size_t srcN = data.points.size();
+  const uint16_t n = (uint16_t)min(srcN, (size_t)48);
   lv_chart_set_point_count(h.chart, n);
 
   float maxW = 500.0f;
@@ -124,16 +127,12 @@ void uiHistoryUpdate(UiHistoryWidgets& h, const HistoryData& data) {
   lv_coord_t* loadPts = lv_chart_get_y_array(h.chart, h.serLoad);
   lv_coord_t* socPts = lv_chart_get_y_array(h.chart, h.serSoc);
   for (uint16_t i = 0; i < n; i++) {
-    if (i < data.points.size()) {
-      const auto& p = data.points[i];
-      pvPts[i] = isnan(p.pv_w) ? 0 : (lv_coord_t)(p.pv_w / 100.0f);
-      loadPts[i] = isnan(p.load_w) ? 0 : (lv_coord_t)(p.load_w / 100.0f);
-      socPts[i] = isnan(p.soc) ? 0 : (lv_coord_t)p.soc;
-    } else {
-      pvPts[i] = 0;
-      loadPts[i] = 0;
-      socPts[i] = 0;
-    }
+    size_t idx = (n <= 1 || srcN <= 1) ? 0 : (i * (srcN - 1)) / (n - 1);
+    if (idx >= srcN) idx = srcN - 1;
+    const auto& p = data.points[idx];
+    pvPts[i] = isnan(p.pv_w) ? 0 : (lv_coord_t)(p.pv_w / 100.0f);
+    loadPts[i] = isnan(p.load_w) ? 0 : (lv_coord_t)(p.load_w / 100.0f);
+    socPts[i] = isnan(p.soc) ? 0 : (lv_coord_t)p.soc;
   }
   lv_chart_refresh(h.chart);
 

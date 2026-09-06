@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from plugins.plugin_interface import StandardDataKeys
+from plugins.plugin_interface import StandardDataKeys, derive_battery_charge_state
 
 logger = logging.getLogger(__name__)
 
@@ -135,17 +135,24 @@ def aggregate_capacity_weighted(
     fulls = [p["full_ah"] for p in packs if p.get("full_ah") is not None]
 
     statuses = [p.get("status") for p in packs if p.get("status")]
+    # Check "discharg" BEFORE "charg" — "charg" is a substring of "discharging".
     if any(s and "alarm" in str(s).lower() for s in statuses):
         combined_status = "Alarm"
-    elif any(s and "charg" in str(s).lower() for s in statuses):
-        combined_status = "Charging"
     elif any(s and "discharg" in str(s).lower() for s in statuses):
         combined_status = "Discharging"
+    elif any(
+        s and "charg" in str(s).lower() and "discharg" not in str(s).lower()
+        for s in statuses
+    ):
+        combined_status = "Charging"
+    elif any(s and "float" in str(s).lower() for s in statuses):
+        combined_status = "Floating"
     elif statuses:
         combined_status = statuses[0]
     else:
         combined_status = "Idle"
 
+    batt_power = round(sum(powers), 1) if powers else None
     result: Dict[str, Any] = {
         BMS_PACKS_LIST: packs,
         BMS_PACK_COUNT: len(packs),
@@ -154,10 +161,11 @@ def aggregate_capacity_weighted(
         StandardDataKeys.BATTERY_STATE_OF_HEALTH_PERCENT: round(soh, 2) if soh is not None else None,
         StandardDataKeys.BATTERY_VOLTAGE_VOLTS: round(sum(voltages) / len(voltages), 3) if voltages else None,
         StandardDataKeys.BATTERY_CURRENT_AMPS: round(sum(currents), 3) if currents else None,
-        StandardDataKeys.BATTERY_POWER_WATTS: round(sum(powers), 1) if powers else None,
+        StandardDataKeys.BATTERY_POWER_WATTS: batt_power,
         StandardDataKeys.BMS_REMAINING_CAPACITY_AH: round(sum(remaining), 3) if remaining else None,
         StandardDataKeys.BMS_FULL_CAPACITY_AH: round(sum(fulls), 3) if fulls else None,
         StandardDataKeys.BATTERY_STATUS_TEXT: combined_status,
+        StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(batt_power, combined_status),
     }
     return result
 

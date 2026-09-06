@@ -687,7 +687,35 @@ export function updateFlowBoard(flowBoardData) {
 		
 
 		
-		const isChg = p < -FLOW_THRESHOLD_W;
+		// Prefer plugin charge-state enum, then status text, then power sign.
+		const chargeState = String(d.battery.chargeState || "").trim().toLowerCase();
+		const statusRaw = String(d.battery.statusText || "").trim();
+		const statusLc = statusRaw.toLowerCase();
+		let batteryDirection = "Idle";
+		if (chargeState === "charging") {
+			batteryDirection = "Charging";
+		} else if (chargeState === "discharging") {
+			batteryDirection = "Discharging";
+		} else if (chargeState === "floating") {
+			batteryDirection = "Floating";
+		} else if (chargeState === "idle") {
+			batteryDirection = "Idle";
+		} else if (statusLc.includes("discharg")) {
+			batteryDirection = "Discharging";
+		} else if (statusLc.includes("charg") && !statusLc.includes("discharg")) {
+			batteryDirection = "Charging";
+		} else if (statusLc.includes("float")) {
+			batteryDirection = "Floating";
+		} else if (statusLc.includes("idle") || statusLc.includes("standby")) {
+			batteryDirection = "Idle";
+		} else if (typeof p === 'number') {
+			// Fallback only when status text has no clear charge/discharge keyword.
+			if (p > 10) batteryDirection = "Discharging";
+			else if (p < -10) batteryDirection = "Charging";
+			else batteryDirection = "Idle";
+		}
+
+		const isChg = batteryDirection === "Charging" || batteryDirection === "Floating";
 		if (el.batteryPowerBorder) el.batteryPowerBorder.classList.toggle('charging', isChg);
 		if (el.batteryPowerText) el.batteryPowerText.classList.toggle('charging', isChg);
 		updateElementText(el.batteryPowerText, Math.abs(p), "W", 0);
@@ -716,17 +744,6 @@ export function updateFlowBoard(flowBoardData) {
 		updateElementText(el.batteryVolts, d.battery.volts, "V", 1);
 		updateElementText(el.batteryAmps, d.battery.amps, "A", 1);
 
-		// Determine battery direction based on power instead of complex status text
-		let batteryDirection = "Idle";
-		if (typeof p === 'number') {
-			if (p > 10) {
-				batteryDirection = "Discharging";
-			} else if (p < -10) {
-				batteryDirection = "Charging";
-			} else if (Math.abs(p) <= 10) {
-				batteryDirection = "Floating";
-			}
-		}
 		updateElementText(el.batteryStatus, batteryDirection, "", 0, "Idle");
 		updateElementText(el.batteryRuntimeText, d.battery.runtimeTextDisplay, "", 0, "N/A");
 
@@ -789,7 +806,13 @@ export function updateFlowBoard(flowBoardData) {
 			} else if (id.includes('grid-flow-indicator')) {
 				curPwr = d.grid.w; maxPwr = MAX_POWER_GRID; vis = !d.grid.noGrid && (Math.abs(curPwr) > FLOW_THRESHOLD_W); if (vis) newDir = curPwr > 0 ? 'forward' : 'backward';
 			} else if (id.includes('battery-flow-indicator')) {
-				curPwr = d.battery.power; maxPwr = MAX_POWER_BATTERY; vis = Math.abs(curPwr) > FLOW_THRESHOLD_W; if (vis) newDir = d.battery.power < 0 ? 'forward' : 'backward';
+				curPwr = d.battery.power; maxPwr = MAX_POWER_BATTERY; vis = Math.abs(curPwr) > FLOW_THRESHOLD_W; if (vis) {
+					const cs = String((d.battery && d.battery.chargeState) || '').toLowerCase();
+					const st = String((d.battery && d.battery.statusText) || '').toLowerCase();
+					if (cs === 'discharging' || st.includes('discharg')) newDir = 'backward';
+					else if (cs === 'charging' || cs === 'floating' || (st.includes('charg') && !st.includes('discharg'))) newDir = 'forward';
+					else newDir = d.battery.power < 0 ? 'forward' : 'backward';
+				}
 			} else if (id.includes('load-flow-indicator')) {
 				curPwr = d.load.currentW; maxPwr = MAX_POWER_LOAD; vis = curPwr > FLOW_THRESHOLD_W; newDir = 'forward';
 			} else {

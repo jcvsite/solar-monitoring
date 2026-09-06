@@ -15,6 +15,10 @@ class DeviceWeb {
   void handleRoot();
   void handleSave();
   void handleUnlock();
+  void handleRestart();
+  void handleScreen();
+  void handleDiag();
+  void handleRotate();
   String htmlPage() const;
   String htmlPinGate() const;
   HostSettings settings_;

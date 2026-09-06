@@ -43,7 +43,7 @@
 #endif
 
 #ifndef TOUCH_Z_MIN
-#define TOUCH_Z_MIN 150
+#define TOUCH_Z_MIN 120
 #endif
 
 // Portrait TFT rotation 0 — calibration from billism1 esp32-2432S028R examples

@@ -137,6 +137,7 @@ export const SDK = {
     STATIC_NUMBER_OF_PHASES_AC: "static_number_of_phases_ac",
     BATTERY_STATE_OF_HEALTH_PERCENT: "battery_state_of_health_percent",
     BATTERY_CYCLES_COUNT: "battery_cycles_count",
+    BATTERY_CHARGE_STATE: "battery_charge_state",
     CONFIG_BATTERY_USABLE_CAPACITY_KWH: "config_battery_usable_capacity_kwh",
     CONFIG_BATTERY_MAX_CHARGE_POWER_W: "config_battery_max_charge_power_w",
     CONFIG_BATTERY_MAX_DISCHARGE_POWER_W: "config_battery_max_discharge_power_w"

@@ -11,6 +11,7 @@ struct GlanceData {
   float soc = NAN;
   float batt_w = NAN;
   String batt_status;
+  String battery_charge_state;  // charging|discharging|idle|floating|unknown
   String batt_time;
   float pv_w = NAN;
   float load_w = NAN;

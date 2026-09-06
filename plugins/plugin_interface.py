@@ -174,6 +174,7 @@ class StandardDataKeys:
     BATTERY_TEMPERATURE_CELSIUS = "battery_temperature_celsius" # Main battery temp, or average if multiple sensors
     BATTERY_STATUS_CODE = "battery_status_code"
     BATTERY_STATUS_TEXT = "battery_status_text"
+    BATTERY_CHARGE_STATE = "battery_charge_state"  # enum: "charging" | "discharging" | "idle" | "floating" | "unknown"
     BATTERY_CYCLES_COUNT = "battery_cycles_count"
     # --- BMS Limits (Optional but useful if available) ---
     BMS_CHARGE_CURRENT_LIMIT_AMPS = "bms_charge_current_limit_amps"
@@ -275,6 +276,77 @@ class StandardDataKeys:
 
     # === PLUGIN-SPECIFIC DATA (Optional pass-through) ===
     PLUGIN_SPECIFIC_DATA_DICT = "plugin_specific_data_dict" # dict
+
+
+# --- Battery charge-state derivation (canonical reference) ---
+# Convention: BATTERY_POWER_WATTS is +ve when DISCHARGING, -ve when CHARGING.
+# Every plugin MUST normalize its battery power to this convention before emitting
+# BATTERY_POWER_WATTS. Prefer device status flags (e.g. Seplos telesignalization)
+# for BATTERY_STATUS_TEXT / BATTERY_CHARGE_STATE when available; otherwise derive
+# them from normalized power. display_api prefers a plugin-emitted
+# BATTERY_CHARGE_STATE when present, else falls back to derive_battery_charge_state.
+
+# Threshold below which the battery is considered idle/floating rather than actively
+# charging or discharging. Matches the thresholds already used by Growatt, Seplos V2/V3,
+# the base-class _battery_status_from_power helper, the web dashboard, and the ESP32
+# viewer (after the sign fix). Keep all surfaces in sync if this value ever changes.
+_BATTERY_IDLE_WATTS_THRESHOLD = 10.0
+
+
+def derive_battery_charge_state(
+    power_w: Optional[float],
+    status_text: Optional[str] = None,
+    floating_kw_threshold: float = 0.0,
+) -> str:
+    """Derive the canonical battery charge-state enum from normalized power.
+
+    Args:
+        power_w: Battery power in watts, ALREADY normalized to the framework
+            convention: +ve = DISCHARGING, -ve = CHARGING.
+        status_text: Optional plugin-supplied BATTERY_STATUS_TEXT. If the text
+            contains a recognised keyword (charging / discharging / floating /
+            idle / standby / protection / warning / unknown) the keyword wins,
+            so detailed device statuses like "Protection: Overvoltage" are
+            preserved rather than being over-ridden by a power-based guess.
+        floating_kw_threshold: If > 0 and status text does not already name a
+            state, treat |power| within ±this many kW of zero as "floating"
+            instead of "idle". Left at 0 (default) so power-only idle stays
+            "idle"; set e.g. to 0.05 (50 W) if your inverter uses a distinct
+            low-power float band without a status keyword.
+
+    Returns:
+        One of "charging" | "discharging" | "idle" | "floating" | "unknown".
+    """
+    if power_w is None:
+        return "unknown"
+
+    # --- 1. Honour a descriptive status text when it names a clear state ----------
+    if isinstance(status_text, str):
+        t = status_text.strip().lower()
+        if not t or t in ("nan", "none", "null"):
+            pass
+        elif "charg" in t and "discharg" not in t:
+            return "charging"
+        elif "discharg" in t:
+            return "discharging"
+        elif "float" in t:
+            return "floating"
+        elif "idle" in t or "standby" in t or "sleep" in t:
+            return "idle"
+        elif "protection" in t or "warning" in t or "fault" in t or "error" in t:
+            # Preserve detailed protection/warning states as "unknown" rather than
+            # guessing from power — the BATTERY_STATUS_TEXT field carries the detail.
+            return "unknown"
+
+    # --- 2. Derive from normalized power -------------------------------------------
+    abs_p = abs(power_w)
+    if abs_p <= _BATTERY_IDLE_WATTS_THRESHOLD:
+        if floating_kw_threshold > 0 and abs_p <= (floating_kw_threshold * 1000.0):
+            return "floating"
+        return "idle"
+    if power_w > 0:
+        return "discharging"
+    return "charging"
 
 
 class DevicePlugin(ABC):

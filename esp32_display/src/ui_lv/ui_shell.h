@@ -28,3 +28,5 @@ void uiShellClearContent(UiShellWidgets& w);
 void uiClockEnsure();
 void uiClockSyncTimezone(int offsetSec);
 String uiClockHeaderRight(const GlanceData& g);
+/** direction: -1 = next page (swipe left), +1 = previous page (swipe right). */
+void uiShellSwipePage(int direction);
