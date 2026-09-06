@@ -32,6 +32,13 @@ _The text-based console interface for quick monitoring._
 ![Home Assistant Dashboard Example](screenshots/home_assistant_integration.png)
 _Example of data displayed in a Home Assistant dashboard via MQTT._
 
+### 📺 ESP32 Glance Display (Optional)
+<p align="center">
+  <img src="screenshots/esp32-glance-orientations.png" alt="ESP32 CYD Glance display - portrait and landscape" width="720"/>
+</p>
+
+_Companion [Cheap Yellow Display](https://github.com/jcvsite/Solar-monitoring-viewer-esp32) (CYD) — live SOC, PV/load/grid, BMS and history over LAN. Configure from **Settings → ESP32 display**; firmware and OTA live in the [viewer repo](https://github.com/jcvsite/Solar-monitoring-viewer-esp32)._
+
 *   **Tuya Smart Plug Automation (Optional):**
 ![Tuya Automation / Inverter Temperature Graph](screenshots/inverter_temperature.png)
 _Example graphs showing Tuya plug state and corresponding inverter temperature._
