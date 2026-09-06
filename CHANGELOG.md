@@ -9,14 +9,12 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 - **ESP32 display config API** (`services/display_api.py`, `services/display_config.py`): `display_config.json`, `GET/POST /api/display/config`, layout/theme catalogs, GitHub firmware proxy (`/api/display/update-info`, `/api/display/firmware/latest.bin`), optional `DISPLAY_API_TOKEN`.
 - **Web dashboard ESP32 settings** (`static/js/ui/display-settings.js`, `static/css/display_preview.css`): **Settings → ESP32 display** — layout/theme mockup gallery, rotation, settings PIN, sync to devices; live preview of all 5 glance layouts and 5 themes.
 - **mDNS discovery** (`services/mdns_service.py`): advertises `_solar-monitoring._tcp` with API paths for ESP32 auto-discovery.
-- **ESP32 viewer firmware v0.3.2** (in [`esp32_display/`](esp32_display/); releases on [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32)): full **LVGL 8.x** UI — card-based Glance/BMS/History/Settings, FreeRTOS host poll worker, icon-only bottom nav, WiFi keyboard, PIN pad, battery fill animation driven by `battery_charge_state`, grid-offline blink alert, scrollable settings; flash ~81%, RAM ~32% on CYD.
-- **ESP32 CI workflow** (`.github/workflows/esp32-display-firmware.yml`): builds firmware and uploads a browser-flash `webflash` artifact.
 - **Display API tests** (`test_plugins/test_display_api.py`, `test_plugins/test_display_config.py`).
+- **ESP32 viewer companion** (separate repo): [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32) — CYD firmware that consumes `/api/display*` (OTA via GitHub releases on that repo).
 
 ### Changed
 - **Display API glance/BMS payloads**: emit `battery_charge_state` (plugin enum preferred, else derived from power + status text); inverter temp falls back to BMS cell average when missing.
-- **ESP32 display UI**: replaced immediate-mode TFT_eSPI drawing with modular `src/ui_lv/` LVGL screens; touch via LVGL events and `lv_timer_handler()`.
-- **Classic Glance layout**: large white SOC beside battery icon (auto-sized Montserrat font), right-aligned metric values, PV/Load/Grid caption icons, centered battery+SOC cluster, battery terminal cap on top.
+- **ESP32 firmware ownership**: removed the in-tree `esp32_display/` copy and monorepo firmware CI; development and releases live only in [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32).
 - **Web dashboard**: switched Flask-SocketIO from `eventlet` to `async_mode='threading'` (real WebSockets via `simple-websocket`). Removes `eventlet`/`greenlet` and the process-wide monkey patch; better suited to blocking SQLite/plugin I/O on modern Python (incl. 3.14).
 - **Web flow board**: battery direction / flow arrows prefer `BATTERY_CHARGE_STATE`, then status text keywords, then ±10 W power sign.
 

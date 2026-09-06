@@ -452,7 +452,7 @@ MDNS_HOSTNAME = solar-monitoring
 | `GET /api/display/update-info` | Latest viewer firmware release |
 | `GET /api/display/firmware/latest.bin` | OTA firmware proxy |
 
-Configure layouts, themes, rotation, and OTA from the web dashboard **Settings → ESP32 display**. Firmware repo: [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32). See [`esp32_display/README.md`](esp32_display/README.md).
+Configure layouts, themes, rotation, and OTA from the web dashboard **Settings → ESP32 display**. Firmware (build, flash, OTA): [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32).
 
 ### Database
 
