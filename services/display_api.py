@@ -8,7 +8,9 @@ Builds typed (non string-formatted) snapshots from shared_data for
 from __future__ import annotations
 
 import json
+import logging
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -18,6 +20,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from core.app_state import AppState
 from plugins.plugin_interface import StandardDataKeys, derive_battery_charge_state
 from utils.helpers import STATUS_NA
+
+logger = logging.getLogger(__name__)
 
 DISPLAY_APP_ID = "solar-monitoring"
 DISPLAY_API_HEADER = "X-Solar-Monitoring"
@@ -157,26 +161,21 @@ def _tz_offset_seconds(tzinfo) -> Optional[int]:
         return None
 
 
-_weather_cache: Dict[str, Any] = {"fetched_at": 0.0, "payload": None}
+# Weather is refreshed off the request path. urllib's timeout does not cover DNS,
+# so a stuck lookup used to block every /api/display poll until the process was restarted.
+_WEATHER_HTTP_TIMEOUT_S = 6.0
+_WEATHER_FAIL_BACKOFF_S = 60.0
+_weather_lock = threading.Lock()
+_weather_cache: Dict[str, Any] = {
+    "fetched_at": 0.0,
+    "retry_after": 0.0,
+    "payload": None,
+    "inflight": False,
+    "worker": None,
+}
 
 
-def _fetch_weather_cached(app_state: AppState) -> Optional[Dict[str, Any]]:
-    if not getattr(app_state, "enable_weather_widget", False):
-        return None
-    interval = max(60, int(getattr(app_state, "weather_update_interval_minutes", 15) or 15) * 60)
-    now = time.time()
-    cached = _weather_cache.get("payload")
-    if cached is not None and now - float(_weather_cache.get("fetched_at") or 0) < interval:
-        return cached
-
-    lat = getattr(app_state, "weather_default_latitude", None)
-    lon = getattr(app_state, "weather_default_longitude", None)
-    if lat is None or lon is None:
-        return cached
-
-    unit = getattr(app_state, "weather_temperature_unit", "celsius") or "celsius"
-    if unit not in ("celsius", "fahrenheit"):
-        unit = "celsius"
+def _request_weather(lat: float, lon: float, unit: str) -> Dict[str, Any]:
     params = urllib.parse.urlencode(
         {
             "latitude": lat,
@@ -187,25 +186,89 @@ def _fetch_weather_cached(app_state: AppState) -> Optional[Dict[str, Any]]:
         }
     )
     url = f"https://api.open-meteo.com/v1/forecast?{params}"
-    try:
-        with urllib.request.urlopen(url, timeout=6) as resp:
-            data = json.loads(resp.read().decode())
-        cur = data.get("current") or {}
-        code = cur.get("weather_code")
-        if code is None:
+    with urllib.request.urlopen(url, timeout=_WEATHER_HTTP_TIMEOUT_S) as resp:
+        data = json.loads(resp.read().decode())
+    cur = data.get("current") or {}
+    code = cur.get("weather_code")
+    if code is None:
+        raise ValueError("weather response missing weather_code")
+    return {
+        "enabled": True,
+        "code": int(code),
+        "is_day": int(cur.get("is_day", 1)),
+        "temp": _num(cur.get("temperature_2m")),
+        "unit": "F" if unit == "fahrenheit" else "C",
+    }
+
+
+def _weather_refresh(lat: float, lon: float, unit: str) -> None:
+    box: Dict[str, Any] = {}
+
+    def _work() -> None:
+        try:
+            box["snap"] = _request_weather(lat, lon, unit)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_work, name="DisplayWeatherHttp", daemon=True)
+    worker.start()
+    worker.join(_WEATHER_HTTP_TIMEOUT_S + 2.0)
+    now = time.time()
+    with _weather_lock:
+        _weather_cache["inflight"] = False
+        snap = box.get("snap")
+        if snap:
+            _weather_cache["worker"] = None
+            _weather_cache["payload"] = snap
+            _weather_cache["fetched_at"] = now
+            _weather_cache["retry_after"] = now
+            return
+        if worker.is_alive():
+            # DNS or connect still blocked. Keep this thread as the only in-flight fetch.
+            _weather_cache["worker"] = worker
+            _weather_cache["retry_after"] = now + _WEATHER_FAIL_BACKOFF_S
+            logger.warning("Display weather fetch exceeded timeout; serving last snapshot.")
+            return
+        _weather_cache["worker"] = None
+        _weather_cache["retry_after"] = now + _WEATHER_FAIL_BACKOFF_S
+        err = box.get("error")
+        if err is not None:
+            logger.warning("Display weather fetch failed: %s", err)
+
+
+def _fetch_weather_cached(app_state: AppState) -> Optional[Dict[str, Any]]:
+    if not getattr(app_state, "enable_weather_widget", False):
+        return None
+    interval = max(60, int(getattr(app_state, "weather_update_interval_minutes", 15) or 15) * 60)
+    lat = getattr(app_state, "weather_default_latitude", None)
+    lon = getattr(app_state, "weather_default_longitude", None)
+    now = time.time()
+    start_refresh = False
+    with _weather_lock:
+        cached = _weather_cache.get("payload")
+        if lat is None or lon is None:
             return cached
-        snap = {
-            "enabled": True,
-            "code": int(code),
-            "is_day": int(cur.get("is_day", 1)),
-            "temp": _num(cur.get("temperature_2m")),
-            "unit": "F" if unit == "fahrenheit" else "C",
-        }
-        _weather_cache["fetched_at"] = now
-        _weather_cache["payload"] = snap
-        return snap
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return cached
+        worker = _weather_cache.get("worker")
+        if worker is not None and not worker.is_alive():
+            _weather_cache["worker"] = None
+            worker = None
+        fresh = cached is not None and (now - float(_weather_cache.get("fetched_at") or 0)) < interval
+        busy = bool(_weather_cache.get("inflight")) or (worker is not None and worker.is_alive())
+        due = now >= float(_weather_cache.get("retry_after") or 0)
+        if not fresh and not busy and due:
+            _weather_cache["inflight"] = True
+            start_refresh = True
+    if start_refresh:
+        unit = getattr(app_state, "weather_temperature_unit", "celsius") or "celsius"
+        if unit not in ("celsius", "fahrenheit"):
+            unit = "celsius"
+        threading.Thread(
+            target=_weather_refresh,
+            args=(lat, lon, unit),
+            name="DisplayWeather",
+            daemon=True,
+        ).start()
+    return cached
 
 
 def build_display_payload(app_state: AppState, packet: Optional[dict] = None) -> Dict[str, Any]:

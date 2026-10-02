@@ -169,10 +169,20 @@ def trigger_script_restart(reason: str):
     """
     logger.critical(f"Triggering script restart due to: {reason}")
     if not should_allow_full_restart():
-        sys.exit(1)
+        os._exit(1)
     try:
-        # Use the real interpreter path; hardcoding 'python' breaks on many Linux installs.
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        from utils.lock import cleanup_lock_file
+        cleanup_lock_file()
+    except Exception as e:
+        logger.error(f"Could not release the instance lock before restart: {e}")
+    if sys.platform == "win32":
+        # os.execv starts a detached process. start_with_restart.bat then
+        # starts another one, loses the lock, and never reloads config.ini.
+        logger.critical("Exiting so the Windows restart script can load config.ini again.")
+        os._exit(0)
+    script = os.path.abspath(sys.argv[0] if sys.argv else __file__)
+    try:
+        os.execv(sys.executable, [sys.executable, script] + sys.argv[1:])
     except OSError as e:
         logger.error(f"Failed to restart script: {e}")
-        sys.exit(1)
+        os._exit(1)

@@ -75,6 +75,12 @@ LOCAL_TIMEZONE = UTC
 # Check for updates on startup
 CHECK_FOR_UPDATES = true
 
+# Download and install updates, then restart. Off by default.
+AUTO_UPDATE = false
+
+# release = latest GitHub Release. main = current main branch.
+UPDATE_CHANNEL = release
+
 # Maximum reconnection attempts
 MAX_RECONNECT_ATTEMPTS = 5
 
@@ -92,6 +98,8 @@ MAX_RECONNECT_ATTEMPTS = 5
 | `SYSTEM_TITLE` | User-facing title (web, console, ESP32, mDNS name) | `Solar Monitoring` | `JCV Home Solar` |
 | `LOCAL_TIMEZONE` | IANA timezone identifier | UTC | `Europe/London`, `America/New_York` |
 | `CHECK_FOR_UPDATES` | Enable update checking | true | `true`, `false` |
+| `AUTO_UPDATE` | Install the selected channel and restart | false | `true`, `false` |
+| `UPDATE_CHANNEL` | What auto-update installs | `release` | `release`, `main` |
 | `PRIMARY_BMS_INSTANCE` | Default BMS for detail views | first BMS | `BMS_Seplos_v2` |
 
 ### `[BMS_AGGREGATION]` Section

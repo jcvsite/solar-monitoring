@@ -37,32 +37,46 @@ DEFAULT_BRANCH = "main"
 REQUEST_TIMEOUT = 10
 
 
-def get_latest_version_from_github(repo_owner: str = REPO_OWNER, 
-                                 repo_name: str = REPO_NAME) -> Optional[str]:
-    """
-    Fetch the latest release version from GitHub API.
-    
-    Args:
-        repo_owner: GitHub repository owner/username
-        repo_name: GitHub repository name
-        
-    Returns:
-        Latest version string if successful, None if failed
-    """
+def normalize_update_channel(value: str) -> str:
+    """Return ``release`` or ``main``. Unknown values fall back to ``release``."""
+    channel = (value or "").strip().lower()
+    if channel in ("release", "main"):
+        return channel
+    if channel:
+        logger.warning("Unknown UPDATE_CHANNEL %r. Using release.", value)
+    return "release"
+
+
+def _github_json(url: str) -> Optional[Dict[str, Any]]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "solar-monitoring",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+        if response.status != 200:
+            logger.warning(f"GitHub API returned status {response.status}")
+            return None
+        return json.loads(response.read().decode("utf-8"))
+
+
+def get_latest_release(repo_owner: str = REPO_OWNER,
+                       repo_name: str = REPO_NAME) -> Optional[Dict[str, str]]:
+    """Return the latest release tag, semver, and zipball URL."""
     try:
         url = GITHUB_API_URL.format(owner=repo_owner, repo=repo_name)
         logger.debug(f"Checking for updates from: {url}")
-        
-        with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                latest_version = data.get('tag_name', '').lstrip('v')  # Remove 'v' prefix if present
-                logger.debug(f"Latest release version from GitHub: {latest_version}")
-                return latest_version
-            else:
-                logger.warning(f"GitHub API returned status {response.status}")
-                return None
-                
+        data = _github_json(url)
+        if not data:
+            return None
+        tag = str(data.get("tag_name") or "").strip()
+        zipball = str(data.get("zipball_url") or "").strip()
+        if not tag or not zipball:
+            logger.warning("GitHub release is missing tag_name or zipball_url")
+            return None
+        return {"tag": tag, "version": tag.lstrip("v"), "zipball_url": zipball}
     except urllib.error.HTTPError as e:
         if e.code == 404:
             logger.warning(f"Repository {repo_owner}/{repo_name} not found or no releases available")
@@ -78,6 +92,101 @@ def get_latest_version_from_github(repo_owner: str = REPO_OWNER,
     except Exception as e:
         logger.warning(f"Unexpected error checking for updates: {e}")
         return None
+
+
+def get_latest_version_from_github(repo_owner: str = REPO_OWNER,
+                                 repo_name: str = REPO_NAME) -> Optional[str]:
+    """
+    Fetch the latest release version from GitHub API.
+
+    Args:
+        repo_owner: GitHub repository owner/username
+        repo_name: GitHub repository name
+
+    Returns:
+        Latest version string if successful, None if failed
+    """
+    release = get_latest_release(repo_owner, repo_name)
+    if not release:
+        return None
+    logger.debug(f"Latest release version from GitHub: {release['version']}")
+    return release["version"]
+
+
+def get_main_head(repo_owner: str = REPO_OWNER,
+                  repo_name: str = REPO_NAME,
+                  branch: str = DEFAULT_BRANCH) -> Optional[Dict[str, str]]:
+    """Return the current commit SHA on ``branch`` and a zipball URL for that SHA."""
+    try:
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/commits/{branch}"
+        logger.debug(f"Checking {branch} head from: {url}")
+        data = _github_json(url)
+        if not data:
+            return None
+        sha = str(data.get("sha") or "").strip()
+        if not sha:
+            logger.warning("GitHub commit response is missing sha")
+            return None
+        zipball = f"https://api.github.com/repos/{repo_owner}/{repo_name}/zipball/{sha}"
+        return {"sha": sha, "zipball_url": zipball}
+    except urllib.error.HTTPError as e:
+        logger.warning(f"HTTP error checking {branch}: {e.code} - {e.reason}")
+        return None
+    except urllib.error.URLError as e:
+        logger.warning(f"Network error checking {branch}: {e.reason}")
+        return None
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        logger.warning(f"Failed to parse GitHub commit response: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Unexpected error checking {branch}: {e}")
+        return None
+
+
+def lookup_update_target(channel: str,
+                         repo_owner: str = REPO_OWNER,
+                         repo_name: str = REPO_NAME) -> Optional[Dict[str, str]]:
+    """
+    Resolve the configured channel to a concrete install target.
+
+    ``release`` uses the latest release tag. ``main`` uses the branch commit SHA,
+    because unreleased commits often keep the same ``__version__``.
+    """
+    channel = normalize_update_channel(channel)
+    if channel == "main":
+        head = get_main_head(repo_owner, repo_name)
+        if not head:
+            return None
+        return {
+            "channel": "main",
+            "ref": head["sha"],
+            "zipball_url": head["zipball_url"],
+            "label": head["sha"][:7],
+        }
+    release = get_latest_release(repo_owner, repo_name)
+    if not release:
+        return None
+    return {
+        "channel": "release",
+        "ref": release["tag"],
+        "version": release["version"],
+        "zipball_url": release["zipball_url"],
+        "label": release["tag"],
+    }
+
+
+def should_auto_install(target: Optional[Dict[str, str]],
+                        current_version: str,
+                        applied: Optional[Dict[str, Any]]) -> bool:
+    """True when ``target`` should be downloaded and installed."""
+    if not target or not target.get("ref") or not target.get("zipball_url"):
+        return False
+    if applied and applied.get("channel") == target.get("channel") and str(applied.get("ref")) == str(target.get("ref")):
+        return False
+    if target.get("channel") == "main":
+        return True
+    latest = target.get("version") or str(target.get("ref")).lstrip("v")
+    return bool(compare_versions(current_version, latest).get("update_available"))
 
 
 def get_version_from_main_py(repo_owner: str = REPO_OWNER,

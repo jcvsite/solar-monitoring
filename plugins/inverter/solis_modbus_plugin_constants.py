@@ -237,7 +237,9 @@ SOLIS_FAULT_BITFIELD_MAPS: Dict[int, Dict[str, Any]] = {
         3: "Under Temperature Discharge", 4: "BMS Over Temperature", 5: "BMS Under Temperature",
         6: "BMS Over Temperature Charging", 7: "BMS Under Temperature Charging", 8: "BMS Discharging Overcurrent" }},
     33146: {"category": "bms", "bits": {
-        0: "BMS Charging Overcurrent", 2: "Over SoC", 3: "BMS Internal Protection", 4: "BMS Battery Module Unbalanced" }},
+        0: "BMS Charging Overcurrent", 2: "Over SoC", 3: "BMS Internal Protection", 4: "BMS Battery Module Unbalanced",
+        # Solis protocol marks bit 7 reserved. Confirmed on a Seplos pack: BMS software shows Remaining Capacity Alarm.
+        7: "Remaining Capacity Alarm" }},
     # Operating status (33121). Bits 8–10 are "is X normal?" where 1=Yes/OK (not a fault).
     # Source: Solis Appendix 6 / community maps (GrugBus, ginlong-solis YAML with invert on 8–10).
     33121: {"category": "status", "bits": {

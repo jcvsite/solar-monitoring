@@ -223,6 +223,8 @@ def _render_ini(
         f"SYSTEM_TITLE = {system_title}",
         f"LOCAL_TIMEZONE = {timezone}",
         "CHECK_FOR_UPDATES = false",
+        "AUTO_UPDATE = false",
+        "UPDATE_CHANNEL = release",
         "MAX_RECONNECT_ATTEMPTS = 5",
         "",
         "[BMS_AGGREGATION]",

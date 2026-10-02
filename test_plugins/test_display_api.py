@@ -1,11 +1,14 @@
 # test_plugins/test_display_api.py
 """Unit tests for compact display API helpers."""
+import threading
 import time
 import unittest
 from datetime import timezone
+from unittest.mock import patch
 
 from core.app_state import AppState
 from plugins.plugin_interface import StandardDataKeys
+import services.display_api as display_api
 from services.display_api import build_display_payload, derive_grid_state
 
 
@@ -116,6 +119,41 @@ class TestDisplayApi(unittest.TestCase):
         }
         payload = build_display_payload(self.app, packet)
         self.assertIsNone(payload["weather"])
+
+    def test_weather_refresh_does_not_block_display_payload(self):
+        with display_api._weather_lock:
+            display_api._weather_cache.update(
+                {
+                    "fetched_at": 0.0,
+                    "retry_after": 0.0,
+                    "payload": None,
+                    "inflight": False,
+                    "worker": None,
+                }
+            )
+        self.app.enable_weather_widget = True
+        caller = threading.get_ident()
+        callers = []
+
+        def fail_open(*_args, **_kwargs):
+            callers.append(threading.get_ident())
+            raise OSError("offline")
+
+        packet = {
+            StandardDataKeys.SERVER_TIMESTAMP_MS_UTC: _wrap(int(time.time() * 1000)),
+            StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT: _wrap(50.0),
+        }
+        with patch("services.display_api.urllib.request.urlopen", side_effect=fail_open):
+            started = time.perf_counter()
+            payload = build_display_payload(self.app, packet)
+            elapsed = time.perf_counter() - started
+            deadline = time.time() + 2
+            while time.time() < deadline and not callers:
+                time.sleep(0.01)
+        self.assertLess(elapsed, 0.5)
+        self.assertIsNone(payload["weather"])
+        self.assertTrue(callers)
+        self.assertNotEqual(callers[0], caller)
 
 
 if __name__ == "__main__":

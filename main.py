@@ -28,6 +28,12 @@ import time
 import queue
 from typing import Callable
 
+# Apply a staged update before importing services. Those imports load native
+# modules, and Windows will not let pip replace them while they are loaded.
+if __name__ == "__main__":
+    from utils.updater import apply_pending_and_reexec
+    apply_pending_and_reexec()
+
 from core.app_state import AppState
 from core.config_loader import load_configuration, validate_core_config
 from core.plugin_manager import (
@@ -47,7 +53,7 @@ from services.data_filter_service import DataFilterService
 from services.metrics_service import MetricsService
 from services.mdns_service import MdnsService
 from utils.lock import acquire_lock, cleanup_lock_file
-from utils.update_checker import check_for_updates_safe
+from utils.update_checker import check_for_updates_safe, normalize_update_channel
 
 # Application version
 __version__ = "1.4.0"
@@ -142,24 +148,50 @@ if __name__ == "__main__":
     logger = logging.getLogger(CORE_LOGGER_NAME)
     logger.info(f"--- Starting Solar Monitoring v{__version__} ---")
 
+    print(f"Using config file: {config_file}")
     if not acquire_lock(str(script_dir / LOCK_FILE_NAME)):
+        print(
+            "Another Solar Monitoring window is already running, so this start "
+            f"did not load {config_file}. Close the other window and start again."
+        )
         logger.critical("Another instance is already running. Exiting.")
-        sys.exit(1)
+        sys.exit(2)
 
     # Validate critical configuration settings. This will exit if config is invalid.
     validate_core_config(app_state)
     
     # --- 2. Check for Updates (if enabled) ---
-    if app_state.config.getboolean('GENERAL', 'CHECK_FOR_UPDATES', fallback=True):
+    check_updates = app_state.config.getboolean('GENERAL', 'CHECK_FOR_UPDATES', fallback=True)
+    auto_update = app_state.config.getboolean('GENERAL', 'AUTO_UPDATE', fallback=False)
+    update_channel = normalize_update_channel(
+        app_state.config.get('GENERAL', 'UPDATE_CHANNEL', fallback='release')
+    )
+    if check_updates or auto_update:
         # Run update check in a separate thread to avoid blocking startup
         def update_check_thread():
-            result = check_for_updates_safe(__version__)
-            if result:
-                # Store update information in app state
-                app_state.update_available = result['update_available']
-                app_state.latest_version = result['latest']
-                app_state.update_check_completed = True
-        
+            if check_updates:
+                result = check_for_updates_safe(__version__)
+                if result:
+                    # Store update information in app state
+                    app_state.update_available = result['update_available']
+                    app_state.latest_version = result['latest']
+                    app_state.update_check_completed = True
+            if not auto_update:
+                return
+            try:
+                from utils.updater import stage_auto_update
+                staged = stage_auto_update(script_dir, update_channel, __version__)
+            except Exception as exc:
+                logger.warning(f"Auto-update staging failed: {exc}")
+                return
+            if not staged:
+                return
+            logger.critical(
+                f"Triggering script restart due to: auto-update {staged['channel']} {staged['label']}"
+            )
+            app_state.running = False
+            app_state.main_threads_stop_event.set()
+
         update_thread = threading.Thread(target=update_check_thread, name="UpdateChecker", daemon=True)
         update_thread.start()
     else:
