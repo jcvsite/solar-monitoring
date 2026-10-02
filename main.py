@@ -166,31 +166,43 @@ if __name__ == "__main__":
     update_channel = normalize_update_channel(
         app_state.config.get('GENERAL', 'UPDATE_CHANNEL', fallback='release')
     )
+    try:
+        update_check_hours = app_state.config.getint('GENERAL', 'AUTO_UPDATE_CHECK_HOURS', fallback=0)
+    except ValueError:
+        logger.warning("Invalid AUTO_UPDATE_CHECK_HOURS. Checking once at startup.")
+        update_check_hours = 0
+    if update_check_hours < 0:
+        update_check_hours = 0
     if check_updates or auto_update:
-        # Run update check in a separate thread to avoid blocking startup
+        # Run update check in a separate thread to avoid blocking startup.
+        # The first check is immediate. AUTO_UPDATE_CHECK_HOURS repeats it.
         def update_check_thread():
-            if check_updates:
-                result = check_for_updates_safe(__version__)
-                if result:
-                    # Store update information in app state
-                    app_state.update_available = result['update_available']
-                    app_state.latest_version = result['latest']
-                    app_state.update_check_completed = True
-            if not auto_update:
-                return
-            try:
-                from utils.updater import stage_auto_update
-                staged = stage_auto_update(script_dir, update_channel, __version__)
-            except Exception as exc:
-                logger.warning(f"Auto-update staging failed: {exc}")
-                return
-            if not staged:
-                return
-            logger.critical(
-                f"Triggering script restart due to: auto-update {staged['channel']} {staged['label']}"
-            )
-            app_state.running = False
-            app_state.main_threads_stop_event.set()
+            while app_state.running:
+                if check_updates:
+                    result = check_for_updates_safe(__version__)
+                    if result:
+                        app_state.update_available = result['update_available']
+                        app_state.latest_version = result['latest']
+                        app_state.update_check_completed = True
+                if auto_update:
+                    try:
+                        from utils.updater import stage_auto_update
+                        staged = stage_auto_update(script_dir, update_channel, __version__)
+                    except Exception as exc:
+                        logger.warning(f"Auto-update staging failed: {exc}")
+                        staged = None
+                    if staged:
+                        logger.critical(
+                            f"Triggering script restart due to: auto-update {staged['channel']} {staged['label']}"
+                        )
+                        app_state.running = False
+                        app_state.main_threads_stop_event.set()
+                        return
+                if update_check_hours <= 0:
+                    return
+                logger.info(f"Next update check in {update_check_hours} hour(s).")
+                if app_state.main_threads_stop_event.wait(update_check_hours * 3600):
+                    return
 
         update_thread = threading.Thread(target=update_check_thread, name="UpdateChecker", daemon=True)
         update_thread.start()

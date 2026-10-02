@@ -81,6 +81,9 @@ AUTO_UPDATE = false
 # release = latest GitHub Release. main = current main branch.
 UPDATE_CHANNEL = release
 
+# Repeat the check while running. 0 = startup only. First check is always immediate.
+AUTO_UPDATE_CHECK_HOURS = 0
+
 # Maximum reconnection attempts
 MAX_RECONNECT_ATTEMPTS = 5
 
@@ -100,6 +103,7 @@ MAX_RECONNECT_ATTEMPTS = 5
 | `CHECK_FOR_UPDATES` | Enable update checking | true | `true`, `false` |
 | `AUTO_UPDATE` | Install the selected channel and restart | false | `true`, `false` |
 | `UPDATE_CHANNEL` | What auto-update installs | `release` | `release`, `main` |
+| `AUTO_UPDATE_CHECK_HOURS` | Hours between checks while running. `0` checks only at startup | `0` | `0`, `6`, `24` |
 | `PRIMARY_BMS_INSTANCE` | Default BMS for detail views | first BMS | `BMS_Seplos_v2` |
 
 ### `[BMS_AGGREGATION]` Section

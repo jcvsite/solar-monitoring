@@ -225,6 +225,7 @@ def _render_ini(
         "CHECK_FOR_UPDATES = false",
         "AUTO_UPDATE = false",
         "UPDATE_CHANNEL = release",
+        "AUTO_UPDATE_CHECK_HOURS = 0",
         "MAX_RECONNECT_ATTEMPTS = 5",
         "",
         "[BMS_AGGREGATION]",

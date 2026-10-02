@@ -41,6 +41,10 @@ AUTO_UPDATE = false
 # main = current main branch (commit SHA; version number often stays the same).
 UPDATE_CHANNEL = release
 
+# How often to check again while the app stays running, in hours.
+# 0 = only when the process starts. The first check is always at startup.
+AUTO_UPDATE_CHECK_HOURS = 0
+
 # Maximum number of times the watchdog will attempt to restart a failed plugin before giving up.
 MAX_RECONNECT_ATTEMPTS = 5
 
