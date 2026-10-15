@@ -68,11 +68,10 @@ class CursesService:
         self.update_interval = app_state.config.getint('CONSOLE_DASHBOARD', 'DASHBOARD_UPDATE_INTERVAL', fallback=1)
         self.font_scale = str(app_state.config.get('CONSOLE_DASHBOARD', 'FONT_SCALE', fallback='normal')).strip().lower()
         self.stdscr = None
-        self.curses_available = False
-        try:
-            import curses
-            self.curses_available = True
-        except ImportError:
+        # Python 3.15 ships Lib/curses/__init__.py, but the _curses extension
+        # is missing on Windows, so "import curses" raises ModuleNotFoundError.
+        self.curses_available = curses is not None and hasattr(curses, "initscr")
+        if not self.curses_available:
             logger.warning("Curses library not found, console dashboard disabled.")
             self.enabled = False
 
@@ -229,10 +228,9 @@ class CursesService:
                     self._cleanup_curses()
                 except Exception:
                     pass
-                # Only exit the outer loop on intentional stop; otherwise retry above.
-                if not self.app_state.running:
-                    break
-                # If we fell out of the inner loop without exception, continue outer to re-init.
+            # Only exit the outer loop on intentional stop; otherwise retry above.
+            if not self.app_state.running:
+                break
 
     def _init_curses_colors(self) -> None:
         """

@@ -37,7 +37,7 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 - **BMS aggregator status**: check “discharging” before “charging” (substring bug); recognize Floating; publish `BATTERY_CHARGE_STATE`.
 - **KPI grid direction**: live Import/Export labels used the wrong sign vs the flow board (SDK: +export / −import). Live watts now show on the matching Grid Import / Grid Export card.
 - **Windows install.bat**: prefer `py -3`, ignore the Microsoft Store stub, and work when `TEMP` is under `C:\Users` (including Python 3.14).
-- **Windows install on Python 3.15:** `windows-curses` has no build yet, so it is no longer a hard dependency. The web dashboard installs; the console dashboard stays off until a 3.14-or-older Python is used.
+- **Windows install on Python 3.15:** `windows-curses` has no build yet, so it is no longer a hard dependency. Python 3.15 also ships a `curses` package without the `_curses` extension; that import is ignored so the process still starts. The console dashboard stays off until a 3.14-or-older Python is used.
 
 ## [1.4.0] - 2026-07-24
 
