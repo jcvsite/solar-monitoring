@@ -16,10 +16,6 @@ GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
 """
 
-try:
-    import curses
-except ImportError:
-    curses = None
 import logging
 import os
 import sys
@@ -29,6 +25,29 @@ import threading
 import re
 from datetime import datetime
 from typing import Tuple, Any, Dict
+
+def _load_curses():
+    """Return a curses-like module, or None when no console UI library loads.
+
+    Windows uses Uni-Curses, which wraps a bundled PDCurses DLL and does not
+    need a per-Python windows-curses wheel. Linux and macOS use the stdlib.
+    """
+    if sys.platform == "win32":
+        try:
+            from services.unicurses_adapter import load_unicurses
+            return load_unicurses()
+        except ImportError:
+            return None
+    try:
+        import curses as std_curses
+    except ImportError:
+        return None
+    if not hasattr(std_curses, "initscr"):
+        return None
+    return std_curses
+
+
+curses = _load_curses()
 
 from core.app_state import AppState
 from plugins.plugin_interface import StandardDataKeys
@@ -71,8 +90,6 @@ class CursesService:
         self.font_scale = str(app_state.config.get('CONSOLE_DASHBOARD', 'FONT_SCALE', fallback='normal')).strip().lower()
         self.stdscr = None
         self._plain_tty = False
-        # Python 3.15 ships Lib/curses/__init__.py, but the _curses extension
-        # is missing on Windows, so "import curses" raises ModuleNotFoundError.
         self.curses_available = curses is not None and hasattr(curses, "initscr")
         if not self.curses_available and self.enabled:
             logger.warning("Curses library not found. Using a plain text console dashboard.")

@@ -20,6 +20,7 @@ License: MIT
 
 import logging
 from logging.handlers import RotatingFileHandler
+import os
 import pathlib
 import sys
 import threading
@@ -28,9 +29,32 @@ import time
 import queue
 from typing import Callable
 
+
+def _reexec_in_project_venv() -> None:
+    """Restart under venv\\Scripts\\python.exe when Windows launches main.py directly.
+
+    Double-clicking or typing ``main.py`` uses the Python registered for .py
+    files. That interpreter does not have the install's packages.
+    """
+    root = pathlib.Path(__file__).resolve().parent
+    if sys.platform == "win32":
+        venv_py = root / "venv" / "Scripts" / "python.exe"
+    else:
+        venv_py = root / "venv" / "bin" / "python"
+    if not venv_py.is_file():
+        return
+    try:
+        if pathlib.Path(sys.executable).resolve() == venv_py.resolve():
+            return
+    except OSError:
+        return
+    os.execv(str(venv_py), [str(venv_py), str(root / "main.py"), *sys.argv[1:]])
+
+
 # Apply a staged update before importing services. Those imports load native
 # modules, and Windows will not let pip replace them while they are loaded.
 if __name__ == "__main__":
+    _reexec_in_project_venv()
     from utils.updater import apply_pending_and_reexec
     apply_pending_and_reexec()
 

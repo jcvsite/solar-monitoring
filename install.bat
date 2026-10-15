@@ -18,13 +18,13 @@ echo ==========================================
 echo.
 echo [INFO] Install directory: %CD%
 echo.
-echo [INFO] Recommended Python: 3.11 or 3.12 from https://www.python.org/downloads/
-echo [INFO] Supported: Python 3.9+ ^(web dashboard on 3.15+; console UI through 3.14^)
+echo [INFO] Recommended Python: 3.12 or 3.14 from https://www.python.org/downloads/
+echo [INFO] Supported: Python 3.9+. The Windows console uses Uni-Curses, including Python 3.15.
 echo.
 
 REM -------------------------------------------------------------
 REM Locate a real Python 3.9+ interpreter
-REM Prefer: 3.12/3.11 (smoothest wheels), then other py -3.x, then python.exe
+REM Prefer: 3.12/3.14 (colored console), then other py -3.x, then python.exe
 REM Skip the Windows Store "python" stub that is not a real install.
 REM -------------------------------------------------------------
 set "PYTHON_CMD="
@@ -33,8 +33,10 @@ set "PYTHON_VERSION="
 
 echo [STEP] Looking for a usable Python 3.9+...
 
-REM Prefer LTS-ish builds when installed (smoother than bleeding-edge 3.14)
+REM 3.12 and 3.14 have the broadest wheels. Uni-Curses covers the console on any of these.
 call :pick_python py -3.12
+if defined PYTHON_CMD goto :python_ready
+call :pick_python py -3.14
 if defined PYTHON_CMD goto :python_ready
 call :pick_python py -3.11
 if defined PYTHON_CMD goto :python_ready
@@ -45,7 +47,7 @@ if defined PYTHON_CMD goto :python_ready
 call :pick_python py -3.9
 if defined PYTHON_CMD goto :python_ready
 
-REM Default launcher / whatever is active (may be 3.14)
+REM Default launcher / whatever is active (may be 3.15)
 call :pick_python py -3
 if defined PYTHON_CMD goto :python_ready
 
@@ -56,7 +58,7 @@ if defined PYTHON_CMD goto :python_ready
 echo [ERROR] No usable Python 3.9+ was found.
 echo.
 echo Install Python from https://www.python.org/downloads/
-echo   - Choose Python 3.11 or 3.12 for the smoothest Windows install
+echo   - Choose Python 3.12 or 3.14 for the colored console dashboard
 echo   - Enable "Add python.exe to PATH"
 echo   - In Windows Settings, disable App execution aliases for
 echo     "python.exe" / "python3.exe" if they point to the Microsoft Store
@@ -76,8 +78,7 @@ for /f "tokens=1,2 delims=." %%A in ("%PYTHON_VERSION%") do (
     set "PY_MINOR=%%B"
 )
 if "!PY_MAJOR!"=="3" if !PY_MINOR! GEQ 15 (
-    echo [WARNING] Python %PYTHON_VERSION% has no windows-curses build yet.
-    echo           The console dashboard will use plain text. Python 3.12 or 3.14 has the colored UI.
+    echo [INFO] Python %PYTHON_VERSION% uses Uni-Curses for the colored console.
 )
 echo.
 
@@ -156,10 +157,10 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [INFO] Import check passed
-"%VENV_PY%" -c "import curses" >nul 2>&1
+"%VENV_PY%" -c "import unicurses" >nul 2>&1
 if errorlevel 1 (
-    echo [WARNING] Colored console UI unavailable on this Python. A plain text console is used instead.
-    echo           Python 3.12 or 3.14 provides the colored dashboard.
+    echo [WARNING] Uni-Curses is not installed. The console dashboard will use plain text.
+    echo           Re-run install.bat so uni-curses is installed into the virtual environment.
 )
 echo.
 

@@ -4,6 +4,12 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 
 ## [Unreleased]
 
+### Changed
+- **Windows console uses Uni-Curses** (`uni-curses`) instead of `windows-curses`. The bundled PDCurses DLL works on Python 3.15, so the colored dashboard no longer depends on a per-version wheel.
+
+### Fixed
+- **`main.py` on Windows:** typing or double-clicking `main.py` restarts with `venv\Scripts\python.exe`, so packages such as `paho-mqtt` are found.
+
 ## [1.5.0] - 2026-10-15
 
 ### Added

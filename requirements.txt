@@ -38,11 +38,9 @@ tinytuya==1.14.0
 # Recommended for TCP-based plugins.
 ping3==4.0.4
 
-# Console UI (Windows): optional terminal dashboard.
-# Linux/macOS use the stdlib curses module (ncurses headers).
-# windows-curses publishes Windows wheels through Python 3.14 only.
-# On 3.15+ the web dashboard still installs; the console UI stays off.
-windows-curses; sys_platform == "win32" and python_version < "3.15"
+# Windows colored console. Uni-Curses wraps a bundled PDCurses DLL, so it
+# works on Python 3.15 without a windows-curses wheel. Linux/macOS use stdlib curses.
+uni-curses; sys_platform == "win32"
 
 # mDNS / Zeroconf: LAN discovery for ESP32 display and future Home Assistant integration.
 zeroconf>=0.132.0

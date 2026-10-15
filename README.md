@@ -99,7 +99,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for detailed plugin configuration examp
 *   🐍 **Python:** Python **3.9 or newer** is required (uses `zoneinfo`). On Windows, **3.11 or 3.12** from [python.org](https://www.python.org/downloads/) is recommended for the smoothest install (prebuilt wheels). Enable **Add python.exe to PATH**, and disable Microsoft Store **App execution aliases** for `python.exe` if the Store stub interferes.
 *   🔧 **System Libraries (for Optional Console UI):**
     *   **Linux/macOS:** `ncurses` development libraries (e.g., `sudo apt install libncursesw5-dev` on Debian/Ubuntu, `sudo yum install ncurses-devel` on Fedora/CentOS, or `brew install ncurses` on macOS).
-    *   **Windows:** The installer pulls in `windows-curses` on Python 3.14 and older. Python 3.15+ has no build yet; the console dashboard falls back to plain text and the web dashboard still installs.
+    *   **Windows:** The installer pulls in [Uni-Curses](https://pypi.org/project/Uni-Curses/) (`uni-curses`), which wraps a bundled PDCurses DLL and works on Python 3.15 as well as older versions. If that package is missing, the console dashboard falls back to plain text. Linux and macOS use the standard `curses` module.
 *   🔌 **Hardware & Services:**
     *   A solar inverter with Modbus communication enabled (check inverter settings and data logger capabilities).
     *   Optional: A compatible Battery BMS with a serial or TCP connection.
