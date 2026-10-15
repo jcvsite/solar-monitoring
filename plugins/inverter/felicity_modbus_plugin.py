@@ -13,8 +13,9 @@ Features:
 - Temperature and status register decode
 
 Supported Models:
-- Felicity Solar T-REX series
+- Felicity Solar T-REX 3-6 kW single-phase, unconfirmed Growatt-like map
 - Felicity LI / hybrid variants with Growatt-like maps
+- T-REX 10 kW three-phase and the IVGM series are not this map.
 
 Protocol Reference: Felicity Solar Modbus (Growatt-like holding registers; testing)
 GitHub Project: https://github.com/jcvsite/solar-monitoring

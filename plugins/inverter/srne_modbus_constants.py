@@ -109,6 +109,53 @@ SRNE_FAULTS_LOW_MAP = {
     12: "Solar Panel Reversely Connected", 13: "(reserved)", 14: "(reserved)", 15: "(reserved)",
 }
 
+# AC hybrid inverter (not the charge-controller map above). Same 0x0100 origin,
+# different current scale, plus an AC block at 0x0210. Positive battery power
+# is left as reported (watts, signed).
+SRNE_HYBRID_LOW_START = 0x0100
+SRNE_HYBRID_LOW_COUNT = 0x0111 - 0x0100 + 1
+SRNE_HYBRID_LOW: Dict[str, Dict[str, Any]] = {
+    "battery_soc": {"addr": 0x0100, "type": "uint16"},
+    "battery_voltage": {"addr": 0x0101, "type": "uint16", "scale": 0.1},
+    "battery_current": {"addr": 0x0102, "type": "int16", "scale": 0.1},
+    "pv1_voltage": {"addr": 0x0107, "type": "uint16", "scale": 0.1},
+    "pv1_current": {"addr": 0x0108, "type": "uint16", "scale": 0.1},
+    "pv1_power": {"addr": 0x0109, "type": "uint16"},
+    "battery_power": {"addr": 0x010E, "type": "int16"},
+    "pv2_voltage": {"addr": 0x010F, "type": "uint16", "scale": 0.1},
+    "pv2_current": {"addr": 0x0110, "type": "uint16", "scale": 0.1},
+    "pv2_power": {"addr": 0x0111, "type": "uint16"},
+}
+
+SRNE_HYBRID_AC_START = 0x0210
+SRNE_HYBRID_AC_COUNT = 0x0222 - 0x0210 + 1
+SRNE_HYBRID_AC: Dict[str, Dict[str, Any]] = {
+    "run_mode": {"addr": 0x0210, "type": "uint16"},
+    "grid_voltage": {"addr": 0x0213, "type": "uint16", "scale": 0.1},
+    "grid_current": {"addr": 0x0214, "type": "uint16", "scale": 0.1},
+    "grid_frequency": {"addr": 0x0215, "type": "uint16", "scale": 0.01},
+    "inverter_voltage": {"addr": 0x0216, "type": "uint16", "scale": 0.1},
+    "inverter_current": {"addr": 0x0217, "type": "uint16", "scale": 0.1},
+    "inverter_frequency": {"addr": 0x0218, "type": "uint16", "scale": 0.01},
+    "load_current": {"addr": 0x0219, "type": "uint16", "scale": 0.1},
+    "dc_dc_temp": {"addr": 0x0220, "type": "int16", "scale": 0.1},
+    "dc_ac_temp": {"addr": 0x0221, "type": "int16", "scale": 0.1},
+}
+
+SRNE_HYBRID_RUN_MODES = {
+    0: "Power-up Delay",
+    1: "Waiting",
+    2: "Initialisation",
+    3: "Soft Start",
+    4: "Mains",
+    5: "Inverter",
+    6: "Inverter to Mains",
+    7: "Mains to Inverter",
+    8: "Battery Active",
+    9: "Shutdown",
+    10: "Fault",
+}
+
 # Bitfield mapping for Fault Register 0x0121 (High 16 bits)
 SRNE_FAULTS_HIGH_MAP = {
     # Bits are B16-B31, so we map from 0-15

@@ -28,9 +28,11 @@ GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
 """
 
+import socket
 import time
 import struct
 import logging
+import threading
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -164,6 +166,9 @@ class SolisModbusPlugin(DevicePlugin):
         
         self.last_error_message: Optional[str] = None
         self.last_known_dynamic_data: Dict[str, Any] = {}
+        # Poll thread and the yesterday-summary backfill share this client.
+        self._io_lock = threading.RLock()
+        self._reconnect_not_before = 0.0
         
         try:
             self.connection_type = ConnectionType(self.plugin_config.get("connection_type", "tcp").strip().lower())
@@ -232,7 +237,10 @@ class SolisModbusPlugin(DevicePlugin):
         original_params_log = f"(Originals: Timeout={self._orig_modbus_timeout_seconds}s, Delay={self._orig_inter_read_delay_ms}ms, MaxRegs={self._orig_max_regs_per_read})"
         
         if not self._user_set_params["inter_read_delay_ms"]:
-            self.inter_read_delay_ms = min(1000, max(100, int(measured_rtt_ms * 1.2) + 50))
+            # A fast LAN RTT is the gateway, not the inverter. Never go below the
+            # configured gap; only stretch it when the network itself is slow.
+            tuned_delay = int(measured_rtt_ms * 1.2) + 50
+            self.inter_read_delay_ms = min(1000, max(self._orig_inter_read_delay_ms, tuned_delay))
         
         prev_max_regs = self.max_regs_per_read
         if not self._user_set_params["max_regs_per_read"]:
@@ -244,11 +252,16 @@ class SolisModbusPlugin(DevicePlugin):
                 self.logger.info(f"SolisPlugin '{self.instance_name}': Rebuilt dynamic_read_groups with new max_regs_per_read={self.max_regs_per_read}")
         
         if not self._user_set_params["modbus_timeout_seconds"]:
-            self.modbus_timeout_seconds = max(5, int(self.inter_read_delay_ms * 2 / 1000) + 2)
+            tuned_timeout = max(5, int(self.inter_read_delay_ms * 2 / 1000) + 2)
+            self.modbus_timeout_seconds = max(self._orig_modbus_timeout_seconds, tuned_timeout)
 
         self.logger.info(f"SolisPlugin '{self.instance_name}': Final auto-adjusted params: Timeout={self.modbus_timeout_seconds}s, Delay={self.inter_read_delay_ms}ms, MaxRegs={self.max_regs_per_read}. {original_params_log}")
 
     def connect(self) -> bool:
+        with self._io_lock:
+            return self._connect_impl()
+
+    def _connect_impl(self) -> bool:
         """
         Establishes a connection to the Solis inverter.
 
@@ -259,20 +272,34 @@ class SolisModbusPlugin(DevicePlugin):
         Returns:
             True if the connection was successful, False otherwise.
         """
+        if time.monotonic() < self._reconnect_not_before:
+            wait_s = self._reconnect_not_before - time.monotonic()
+            self.last_error_message = f"Waiting {wait_s:.0f}s for the gateway to release the previous session."
+            self.logger.info(f"SolisPlugin '{self.instance_name}': {self.last_error_message}")
+            return False
         if self._is_connected_flag and self.client: return True
         if self.client: self.disconnect()
         self.last_error_message = None
 
         if self.connection_type == ConnectionType.TCP:
-            self.logger.info(f"SolisPlugin '{self.instance_name}': Performing pre-connection network check for {self.tcp_host}:{self.tcp_port}...")
-            port_open, rtt_ms, err_msg = check_tcp_port(self.tcp_host, self.tcp_port, logger_instance=self.logger)
-            if not port_open:
-                self.last_error_message = f"Pre-check failed: TCP port {self.tcp_port} on {self.tcp_host} is not open. Error: {err_msg}"
-                self.logger.error(self.last_error_message)
-                icmp_ok, _, _ = check_icmp_ping(self.tcp_host, logger_instance=self.logger)
-                if not icmp_ok: self.logger.error(f"ICMP ping to {self.tcp_host} also failed. Host is likely down or blocked.")
-                return False
-            self.auto_adjust_params(rtt_ms)
+            local_gateway = self.tcp_host.strip().lower() in ("127.0.0.1", "localhost", "::1")
+            if local_gateway:
+                # One TCP client only. A port probe immediately before connect leaves
+                # the gateway returning exception 11 to the real session.
+                self.logger.info(
+                    f"SolisPlugin '{self.instance_name}': Connecting straight to local gateway {self.tcp_host}:{self.tcp_port}."
+                )
+            else:
+                self.logger.info(f"SolisPlugin '{self.instance_name}': Performing pre-connection network check for {self.tcp_host}:{self.tcp_port}...")
+                port_open, rtt_ms, err_msg = check_tcp_port(self.tcp_host, self.tcp_port, logger_instance=self.logger)
+                if not port_open:
+                    self.last_error_message = f"Pre-check failed: TCP port {self.tcp_port} on {self.tcp_host} is not open. Error: {err_msg}"
+                    self.logger.error(self.last_error_message)
+                    icmp_ok, _, _ = check_icmp_ping(self.tcp_host, logger_instance=self.logger)
+                    if not icmp_ok: self.logger.error(f"ICMP ping to {self.tcp_host} also failed. Host is likely down or blocked.")
+                    return False
+                self.auto_adjust_params(rtt_ms)
+                time.sleep(2.0)
 
         self.logger.info(f"SolisPlugin '{self.instance_name}': Attempting to connect via {self.connection_type.value}...")
         try:
@@ -302,6 +329,11 @@ class SolisModbusPlugin(DevicePlugin):
             if self.client.connect():
                 self._is_connected_flag = True
                 self.logger.info(f"SolisPlugin '{self.instance_name}': Successfully connected.")
+                # A local TCP-serial gateway often accepts the new socket before the
+                # inverter answers. The first read after a process restart otherwise
+                # comes back as gateway exception 11.
+                if self.connection_type == ConnectionType.TCP:
+                    time.sleep(1.0)
                 return True
             else:
                 self.last_error_message = "Pymodbus client.connect() returned False."
@@ -315,9 +347,34 @@ class SolisModbusPlugin(DevicePlugin):
         return False
 
     def disconnect(self) -> None:
+        with self._io_lock:
+            self._disconnect_impl()
+
+    def _abort_client_socket(self) -> None:
+        """Reset the TCP session so a one-client gateway drops it immediately."""
+        client = self.client
+        if client is None:
+            return
+        sock = getattr(client, "socket", None)
+        if sock is None:
+            transport = getattr(client, "transport", None)
+            sock = getattr(transport, "socket", None) if transport is not None else None
+        if sock is None:
+            return
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        except OSError:
+            pass
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def _disconnect_impl(self) -> None:
         """Closes the Modbus connection and resets the client."""
         if self.client:
             self.logger.info(f"SolisPlugin '{self.instance_name}': Disconnecting client.")
+            self._abort_client_socket()
             try:
                 self.client.close()
             except Exception as e:
@@ -348,12 +405,17 @@ class SolisModbusPlugin(DevicePlugin):
             bit_map: Dict[int, str] = map_info.get("bits", {})
             invert_bits = set(map_info.get("invert_bits") or [])
             info_bits = set(map_info.get("info_bits") or [])
+            # 1=OK flags. If every one of them is 0, this firmware is not reporting
+            # the group (S6 1P LV Hybrid). Treating all-zero as three faults is wrong.
+            invert_group_in_use = any((reg_val >> bit) & 1 for bit in invert_bits)
             category: str = map_info.get("category", "unknown_alert_category")
             if category not in categorized_alert_details:
                 categorized_alert_details[category] = []
 
             for bit_pos in range(16):
                 bit_set = bool((reg_val >> bit_pos) & 1)
+                if bit_pos in invert_bits and not invert_group_in_use:
+                    continue
                 # invert_bits: Solis "is normal?" flags — alert when bit is 0
                 active = (not bit_set) if bit_pos in invert_bits else bit_set
                 if not active:
@@ -431,12 +493,20 @@ class SolisModbusPlugin(DevicePlugin):
 
                 except (ModbusException, ModbusIOException, ModbusConnectionException, OSError, AttributeError, struct.error) as e_comm:
                     retries += 1
+                    gateway_no_response = "Exc Code 11" in str(e_comm)
                     self.logger.warning(f"SolisPlugin '{self.instance_name}': Comm error group @{group['start']} (Try {retries}/{self.max_read_retries_per_group}): {type(e_comm).__name__} - {e_comm}")
                     if retries > self.max_read_retries_per_group:
-                        self.logger.error(f"SolisPlugin '{self.instance_name}': Max retries for group @{group['start']}. Forcing disconnect and aborting poll cycle.")
+                        if gateway_no_response:
+                            self._reconnect_not_before = time.monotonic() + 8.0
+                            self.logger.error(
+                                f"SolisPlugin '{self.instance_name}': Max retries for group @{group['start']} "
+                                "(gateway target did not respond). Closing the session and waiting 8s before reconnect."
+                            )
+                        else:
+                            self.logger.error(f"SolisPlugin '{self.instance_name}': Max retries for group @{group['start']}. Forcing disconnect and aborting poll cycle.")
                         self.disconnect()
                         return None
-                    time.sleep(0.5)
+                    time.sleep(2.0 if gateway_no_response else 0.5)
                 except Exception as e_unexpected:
                     self.logger.error(f"SolisPlugin '{self.instance_name}': Unexpected error in group @{group['start']}: {e_unexpected}", exc_info=True)
                     self.disconnect()
@@ -550,6 +620,10 @@ class SolisModbusPlugin(DevicePlugin):
         return max(final_mppt_count, default_mppt_count)
 
     def read_static_data(self) -> Optional[Dict[str, Any]]:
+        with self._io_lock:
+            return self._read_static_data_impl()
+
+    def _read_static_data_impl(self) -> Optional[Dict[str, Any]]:
         """
         Reads static device information from the inverter.
 
@@ -709,6 +783,10 @@ class SolisModbusPlugin(DevicePlugin):
         return standardized_data
 
     def read_dynamic_data(self) -> Optional[Dict[str, Any]]:
+        with self._io_lock:
+            return self._read_dynamic_data_impl()
+
+    def _read_dynamic_data_impl(self) -> Optional[Dict[str, Any]]:
         """
         Reads and processes dynamic (periodically changing) data from the inverter.
 
@@ -763,6 +841,10 @@ class SolisModbusPlugin(DevicePlugin):
         return standardized_dynamic_data
 
     def read_yesterday_energy_summary(self) -> Optional[Dict[str, Any]]:
+        with self._io_lock:
+            return self._read_yesterday_energy_summary_impl()
+
+    def _read_yesterday_energy_summary_impl(self) -> Optional[Dict[str, Any]]:
         """
         Reads the energy summary data for the previous day.
 

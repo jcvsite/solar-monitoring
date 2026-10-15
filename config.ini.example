@@ -196,6 +196,7 @@ deye_model_series = auto
 # tcp_port = 502
 # slave_address = 1
 # has_storage = auto
+# growatt_family = auto   ; or sph (MIX/SPH), wit (WIT TL3), spf (off-grid), tlxh (TL-XH/MIN/MOD)
 
 ####################### BMS Plugins #######################
 
@@ -260,7 +261,8 @@ connection_type = tcp
 tcp_host = 192.168.1.100
 tcp_port = 502
 slave_address = 1
-sofar_series = auto
+# auto probes the HYD KTL/G3 map first, then the older HYD ES block.
+sofar_series = auto             ; or hyd / g3 / ep (HYD KTL family), es (HYD ES)
 
 [PLUGIN_INV_Sungrow]
 plugin_type = inverter.sungrow_modbus_plugin
@@ -281,6 +283,38 @@ plugin_type = inverter.voltronic_pi_plugin
 connection_type = serial
 serial_port = COM3
 baud_rate = 2400
+
+[PLUGIN_INV_SRNE]
+plugin_type = inverter.srne_modbus_plugin
+connection_type = tcp
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 1
+# controller is the ML/HF charge-controller map; hybrid adds the AC block at 0x0210.
+device_profile = controller     ; or hybrid
+
+[PLUGIN_INV_SolaX]
+plugin_type = inverter.solax_modbus_plugin
+connection_type = tcp
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 1
+# gen2 reports battery voltage/current ten times smaller than gen3/gen4.
+solax_generation = gen3         ; or gen2
+
+[PLUGIN_INV_AlphaESS]
+plugin_type = inverter.alphaess_modbus_plugin
+connection_type = tcp
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 1
+
+[PLUGIN_INV_Solinteg]
+plugin_type = inverter.solinteg_modbus_plugin
+connection_type = tcp
+tcp_host = 192.168.1.100
+tcp_port = 502
+slave_address = 1
 
 [PLUGIN_BMS_JBD]
 plugin_type = battery.jbd_bms_plugin

@@ -21,7 +21,8 @@ Supported Models:
 - LuxPower LXP-5K series
 - LuxPower LXP-12K series
 - LuxPower LXP-LB-5K series
-- Compatible LuxPower hybrid inverter models
+- Compatible LuxPower hybrid inverter models on Modbus RTU/TCP port 502
+- LXP-LB-US, GEN, and SNA dongles on TCP port 8000 are a different frame and are not covered.
 
 GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
@@ -33,8 +34,6 @@ import struct
 import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
-from pymodbus.constants import Endian
-from pymodbus.payload import BinaryPayloadDecoder
 
 from pymodbus.client import ModbusSerialClient, ModbusTcpClient
 from pymodbus.exceptions import ModbusException, ModbusIOException, ConnectionException as ModbusConnectionException

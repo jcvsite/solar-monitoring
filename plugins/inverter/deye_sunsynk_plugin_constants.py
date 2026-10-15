@@ -112,8 +112,8 @@ DEYE_MODERN_HYBRID_REGISTERS = {
     "bms_protocol_code": {"addr": 325, "type": "uint16"},
 }
 
-# Register map for older single-phase Deye hybrid inverters
-# These models use a different register layout than modern versions
+# Single-phase 0-279 map. SG05LP1 (tested on SUN-6K-SG05LP1) uses this layout,
+# not the 500+ SG04LP1 map. 32-bit energy totals are low word first.
 DEYE_LEGACY_HYBRID_REGISTERS = {
     "pv1_power": {"addr": 186, "type": "uint16", "unit": "W"},
     "pv2_power": {"addr": 187, "type": "uint16", "unit": "W"},
@@ -122,9 +122,9 @@ DEYE_LEGACY_HYBRID_REGISTERS = {
     "pv1_current": {"addr": 110, "type": "uint16", "scale": 0.1, "unit": "A"},
     "pv2_current": {"addr": 112, "type": "uint16", "scale": 0.1, "unit": "A"},
     "day_energy": {"addr": 108, "type": "uint16", "scale": 0.1, "unit": "kWh"},
-    "total_energy": {"addr": 96, "type": "uint32", "scale": 0.1, "unit": "kWh"},
-    "total_battery_charge": {"addr": 72, "type": "uint32", "scale": 0.1, "unit": "kWh"},
-    "total_battery_discharge": {"addr": 74, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "total_energy": {"addr": 96, "type": "uint32_le", "scale": 0.1, "unit": "kWh"},
+    "total_battery_charge": {"addr": 72, "type": "uint32_le", "scale": 0.1, "unit": "kWh"},
+    "total_battery_discharge": {"addr": 74, "type": "uint32_le", "scale": 0.1, "unit": "kWh"},
     "daily_battery_charge": {"addr": 70, "type": "uint16", "scale": 0.1, "unit": "kWh"},
     "daily_battery_discharge": {"addr": 71, "type": "uint16", "scale": 0.1, "unit": "kWh"},
     "battery_status": {"addr": 189, "type": "uint16"},
@@ -137,12 +137,12 @@ DEYE_LEGACY_HYBRID_REGISTERS = {
     "grid_voltage_l1": {"addr": 150, "type": "uint16", "scale": 0.1, "unit": "V"},
     "grid_current_l1": {"addr": 160, "type": "uint16", "scale": 0.01, "unit": "A"},
     "grid_daily_buy": {"addr": 76, "type": "uint16", "scale": 0.1, "unit": "kWh"},
-    "total_grid_buy": {"addr": 78, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "total_grid_buy": {"addr": 78, "type": "uint32_le", "scale": 0.1, "unit": "kWh"},
     "grid_daily_sell": {"addr": 77, "type": "uint16", "scale": 0.1, "unit": "kWh"},
-    "total_grid_sell": {"addr": 81, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "total_grid_sell": {"addr": 81, "type": "uint32_le", "scale": 0.1, "unit": "kWh"},
     "load_power": {"addr": 178, "type": "uint16", "unit": "W"},
     "daily_load_consumption": {"addr": 84, "type": "uint16", "scale": 0.1, "unit": "kWh"},
-    "total_load_consumption": {"addr": 85, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "total_load_consumption": {"addr": 85, "type": "uint32_le", "scale": 0.1, "unit": "kWh"},
     "inverter_status_code": {"addr": 59, "type": "uint16"},
     "inverter_power": {"addr": 175, "type": "int16", "unit": "W"},
     "grid_frequency": {"addr": 79, "type": "uint16", "scale": 0.01, "unit": "Hz"},

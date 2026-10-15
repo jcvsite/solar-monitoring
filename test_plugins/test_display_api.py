@@ -3,7 +3,7 @@
 import threading
 import time
 import unittest
-from datetime import timezone
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from core.app_state import AppState
@@ -88,6 +88,12 @@ class TestDisplayApi(unittest.TestCase):
         self.assertIn("clock", payload)
         self.assertIn("timezone", payload)
         self.assertIn("tz_offset_sec", payload)
+        self.assertRegex(payload["clock"], r"^\d{1,2}:\d{2} (AM|PM)$")
+        parsed = datetime.strptime(payload["ts"], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        server_now = datetime.now(timezone.utc)
+        self.assertLess(abs((server_now - parsed).total_seconds()), 60)
+        self.assertEqual(payload["tz_offset_sec"], 0)
+        self.assertIsInstance(payload["unix"], int)
         self.assertIsNone(payload["weather"])
 
     def test_battery_charge_state_prefers_plugin_enum(self):

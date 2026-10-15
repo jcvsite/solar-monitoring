@@ -200,7 +200,7 @@ async function loadWeather(locationConfig) {
 		}
 	}
 
-	L.control.attribution({ prefix: '<a href="https://www.rainviewer.com/" target="_blank">RainViewer</a>' }).addTo(map);
+	L.control.attribution({ prefix: '<a href="https://www.rainviewer.com/" target="_blank">RainViewer</a> | <a href="https://www.esri.com/" target="_blank">Esri</a>' }).addTo(map);
 
 	const forecastApiUrl = 'https://api.open-meteo.com/v1/forecast';
 	const params = {
@@ -307,23 +307,36 @@ export function ensureWeatherStarted() {
  * Updates the map's base tile layer to match the current UI theme.
  * @param {string} theme - The theme name, 'light' or 'dark'.
  */
-export function updateWeatherTheme(theme) {
-    if (map) {
-        let tileUrl = theme === 'dark' 
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-        
-        let mapHasBaseLayer = false;
-        map.eachLayer(layer => {
-            if (layer instanceof L.TileLayer && 'setUrl' in layer && layer.options.zIndex === undefined) {
-                layer.setUrl(tileUrl);
-                mapHasBaseLayer = true;
-            }
-        });
+const ESRI_CANVAS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 
-        if (!mapHasBaseLayer) {
-            L.tileLayer(tileUrl).addTo(map);
+function basemapUrls(theme) {
+    const style = theme === 'dark' ? 'World_Dark_Gray' : 'World_Light_Gray';
+    return {
+        base: `${ESRI_CANVAS}/${style}_Base/MapServer/tile/{z}/{y}/{x}`,
+        labels: `${ESRI_CANVAS}/${style}_Reference/MapServer/tile/{z}/{y}/{x}`,
+    };
+}
+
+export function updateWeatherTheme(theme) {
+    if (!map) return;
+    const urls = basemapUrls(theme);
+    let hasBase = false;
+    let hasLabels = false;
+    map.eachLayer(layer => {
+        if (!(layer instanceof L.TileLayer)) return;
+        if (layer.options.basemap === 'base') {
+            layer.setUrl(urls.base);
+            hasBase = true;
+        } else if (layer.options.basemap === 'labels') {
+            layer.setUrl(urls.labels);
+            hasLabels = true;
         }
+    });
+    if (!hasBase) {
+        L.tileLayer(urls.base, { maxZoom: 18, maxNativeZoom: 16, basemap: 'base', zIndex: 0 }).addTo(map);
+    }
+    if (!hasLabels) {
+        L.tileLayer(urls.labels, { maxZoom: 18, maxNativeZoom: 16, basemap: 'labels', zIndex: 1 }).addTo(map);
     }
 }
 

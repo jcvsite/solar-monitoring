@@ -28,6 +28,19 @@ if not exist "%CONFIG%" (
         exit /b 1
     )
 )
+"%PY%" -c "import flask_socketio, simple_websocket, pymodbus" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Dependencies incomplete. Run install.bat first.
+    pause
+    popd
+    exit /b 1
+)
+
+REM Exit codes from main.py:
+REM   0  clean stop (Ctrl+C) - do not loop
+REM   2  another window already holds the lock
+REM   3  asked to restart (update or watchdog) - loop
+REM   *  crash - loop
 
 :loop
 echo ========================================
@@ -39,6 +52,12 @@ echo Press Ctrl+C to stop auto-restart.
 echo ========================================
 "%PY%" "%ROOT%\main.py"
 set "EXITCODE=%ERRORLEVEL%"
+if "%EXITCODE%"=="0" (
+    echo.
+    echo Solar Monitoring stopped.
+    popd
+    exit /b 0
+)
 if "%EXITCODE%"=="2" (
     echo.
     echo [ERROR] Solar Monitoring is already running.
@@ -49,6 +68,6 @@ if "%EXITCODE%"=="2" (
     exit /b 2
 )
 echo.
-echo Script exited with errorlevel %EXITCODE%. Restarting in 10 seconds...
-timeout /t 10 /nobreak >nul
+echo Script exited with errorlevel %EXITCODE%. Restarting in 20 seconds...
+timeout /t 20 /nobreak >nul
 goto loop

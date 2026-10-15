@@ -22,6 +22,7 @@ Supported Models:
 - SRNE ML series (hybrid inverters)
 - SRNE HF series (high-frequency inverters)
 - Compatible SRNE hybrid inverter models
+- HESP (2026, 3-16 kW) is a different family and is not this ML/HF map.
 
 GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
@@ -52,12 +53,64 @@ from .srne_modbus_constants import (
     SRNE_BATTERY_STATUS_CODES,
     SRNE_FAULTS_LOW_MAP,
     SRNE_FAULTS_HIGH_MAP,
+    SRNE_HYBRID_AC,
+    SRNE_HYBRID_AC_COUNT,
+    SRNE_HYBRID_AC_START,
+    SRNE_HYBRID_LOW,
+    SRNE_HYBRID_LOW_COUNT,
+    SRNE_HYBRID_LOW_START,
+    SRNE_HYBRID_RUN_MODES,
 )
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
+from plugins.modbus_helper import decode_registers_by_map, safe_read_holding_registers
 from enum import Enum
 
 UNKNOWN = "Unknown"
+
+
+def standardize_srne_hybrid(decoded: Dict[str, Any]) -> Dict[str, Any]:
+    """Map the SRNE AC hybrid registers onto StandardDataKeys."""
+    batt_p = decoded.get("battery_power")
+    if batt_p is not None:
+        batt_p = float(batt_p)
+    inv_v = decoded.get("inverter_voltage") or 0
+    inv_i = decoded.get("inverter_current") or 0
+    load_i = decoded.get("load_current") or 0
+    ac_power = float(inv_v) * float(inv_i) if inv_v and inv_i else None
+    load_power = float(inv_v) * float(load_i) if inv_v and load_i else None
+    pv = (decoded.get("pv1_power") or 0) + (decoded.get("pv2_power") or 0)
+    code = decoded.get("run_mode")
+    mode = SRNE_HYBRID_RUN_MODES.get(int(code), "Unknown") if code is not None else "Unknown"
+    batt_status = "Idle"
+    if batt_p is not None and batt_p > 10:
+        batt_status = "Discharging"
+    elif batt_p is not None and batt_p < -10:
+        batt_status = "Charging"
+    return {
+        StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: mode,
+        StandardDataKeys.BATTERY_STATUS_TEXT: batt_status,
+        StandardDataKeys.BATTERY_CHARGE_STATE: derive_battery_charge_state(batt_p, batt_status),
+        StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: pv,
+        StandardDataKeys.PV_MPPT1_VOLTAGE_VOLTS: decoded.get("pv1_voltage"),
+        StandardDataKeys.PV_MPPT1_CURRENT_AMPS: decoded.get("pv1_current"),
+        StandardDataKeys.PV_MPPT1_POWER_WATTS: decoded.get("pv1_power"),
+        StandardDataKeys.PV_MPPT2_VOLTAGE_VOLTS: decoded.get("pv2_voltage"),
+        StandardDataKeys.PV_MPPT2_CURRENT_AMPS: decoded.get("pv2_current"),
+        StandardDataKeys.PV_MPPT2_POWER_WATTS: decoded.get("pv2_power"),
+        StandardDataKeys.BATTERY_POWER_WATTS: batt_p,
+        StandardDataKeys.BATTERY_CURRENT_AMPS: decoded.get("battery_current"),
+        StandardDataKeys.BATTERY_VOLTAGE_VOLTS: decoded.get("battery_voltage"),
+        StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT: decoded.get("battery_soc"),
+        StandardDataKeys.BATTERY_TEMPERATURE_CELSIUS: decoded.get("dc_dc_temp"),
+        StandardDataKeys.OPERATIONAL_INVERTER_TEMPERATURE_CELSIUS: decoded.get("dc_ac_temp"),
+        StandardDataKeys.GRID_L1_VOLTAGE_VOLTS: decoded.get("grid_voltage"),
+        StandardDataKeys.GRID_L1_CURRENT_AMPS: decoded.get("grid_current"),
+        StandardDataKeys.GRID_FREQUENCY_HZ: decoded.get("grid_frequency"),
+        StandardDataKeys.AC_POWER_WATTS: ac_power,
+        StandardDataKeys.LOAD_TOTAL_POWER_WATTS: load_power,
+    }
+
 
 class ConnectionType(str, Enum):
     """Enumeration for the supported connection types."""
@@ -69,7 +122,7 @@ class SrneModbusPlugin(DevicePlugin):
         "plugin_id": "srne_modbus",
         "category": "inverter",
         "protocols": ["modbus_tcp", "modbus_rtu"],
-        "models": ["ML", "HF"],
+        "models": ["ML", "HF", "hybrid"],
         "status": "testing",
         "api_version": 1,
     }
@@ -121,6 +174,9 @@ class SrneModbusPlugin(DevicePlugin):
         
         # Modbus communication parameters
         self.modbus_timeout_seconds = int(self.plugin_config.get("modbus_timeout_seconds", 10))
+        self.device_profile = str(self.plugin_config.get("device_profile", "controller")).split(";")[0].strip().lower()
+        if self.device_profile not in ("controller", "hybrid"):
+            self.device_profile = "controller"
         
         target_info = f"{self.tcp_host}:{self.tcp_port}" if self.connection_type == ConnectionType.TCP else f"{self.serial_port}:{self.baud_rate}"
         self.logger.info(f"SRNE Plugin '{self.instance_name}': Initialized. Conn: {self.connection_type.value}, Target: {target_info}, SlaveID: {self.slave_address}.")
@@ -133,7 +189,20 @@ class SrneModbusPlugin(DevicePlugin):
     @property
     def pretty_name(self) -> str:
         """Returns a user-friendly name for the plugin."""
-        return "SRNE Modbus Controller"
+        return "SRNE Modbus"
+
+    @staticmethod
+    def get_configurable_params() -> List[Dict[str, Any]]:
+        return [
+            {"name": "connection_type", "type": "select", "options": ["tcp", "serial"], "default": "tcp"},
+            {"name": "tcp_host", "type": "str", "default": "192.168.1.100"},
+            {"name": "tcp_port", "type": "int", "default": 502},
+            {"name": "serial_port", "type": "str", "default": "/dev/ttyUSB0"},
+            {"name": "baud_rate", "type": "int", "default": 9600},
+            {"name": "slave_address", "type": "int", "default": 1},
+            {"name": "modbus_timeout_seconds", "type": "float", "default": 5},
+            {"name": "device_profile", "type": "select", "options": ["controller", "hybrid"], "default": "controller"},
+        ]
 
     def connect(self) -> bool:
         """
@@ -231,14 +300,9 @@ class SrneModbusPlugin(DevicePlugin):
             
             # Read Product Model (ASCII)
             model_info = SRNE_STATIC_REGISTERS["product_model"]
-            # Try different parameter formats for pymodbus version compatibility
-            try:
-                result = self.client.read_holding_registers(model_info["addr"], model_info["len"], unit=self.slave_address)
-            except TypeError:
-                try:
-                    result = self.client.read_holding_registers(model_info["addr"], model_info["len"], slave=self.slave_address)
-                except TypeError:
-                    result = self.client.read_holding_registers(model_info["addr"], model_info["len"])
+            result = safe_read_holding_registers(
+                self.client, model_info["addr"], model_info["len"], slave=self.slave_address, logger_instance=self.logger
+            )
             if not result.isError():
                 static_data[StandardDataKeys.STATIC_INVERTER_MODEL_NAME] = self._decode_string_from_registers(result.registers)
             else:
@@ -246,14 +310,9 @@ class SrneModbusPlugin(DevicePlugin):
 
             # Read Versions
             sw_info = SRNE_STATIC_REGISTERS["software_version"]
-            # Try different parameter formats for pymodbus version compatibility
-            try:
-                result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"], unit=self.slave_address)
-            except TypeError:
-                try:
-                    result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"], slave=self.slave_address)
-                except TypeError:
-                    result = self.client.read_holding_registers(sw_info["addr"], sw_info["len"])
+            result = safe_read_holding_registers(
+                self.client, sw_info["addr"], sw_info["len"], slave=self.slave_address, logger_instance=self.logger
+            )
             if not result.isError():
                 # V03.02.01 is stored as 0003 0201
                 v_major = result.registers[0] >> 8
@@ -263,8 +322,12 @@ class SrneModbusPlugin(DevicePlugin):
 
             # Add manufacturer
             static_data[StandardDataKeys.STATIC_INVERTER_MANUFACTURER] = "SRNE"
-            static_data[StandardDataKeys.STATIC_NUMBER_OF_MPPTS] = 1
-            static_data[StandardDataKeys.STATIC_NUMBER_OF_PHASES_AC] = 0 # It's a DC device
+            if self.device_profile == "hybrid":
+                static_data[StandardDataKeys.STATIC_NUMBER_OF_MPPTS] = 2
+                static_data[StandardDataKeys.STATIC_NUMBER_OF_PHASES_AC] = 1
+            else:
+                static_data[StandardDataKeys.STATIC_NUMBER_OF_MPPTS] = 1
+                static_data[StandardDataKeys.STATIC_NUMBER_OF_PHASES_AC] = 0 # It's a DC device
 
             self.last_known_static_data = static_data
             return static_data
@@ -274,6 +337,22 @@ class SrneModbusPlugin(DevicePlugin):
             self.logger.error(f"SRNE Plugin '{self.instance_name}': Failed to read static data: {e}")
             self.disconnect()
             return {}
+
+    def _read_hybrid_dynamic(self) -> Optional[Dict[str, Any]]:
+        low = safe_read_holding_registers(
+            self.client, SRNE_HYBRID_LOW_START, SRNE_HYBRID_LOW_COUNT,
+            slave=self.slave_address, logger_instance=self.logger,
+        )
+        if low is None or low.isError():
+            raise ConnectionException(f"Modbus error reading SRNE hybrid block: {low}")
+        decoded = decode_registers_by_map(list(low.registers), SRNE_HYBRID_LOW, SRNE_HYBRID_LOW_START)
+        ac = safe_read_holding_registers(
+            self.client, SRNE_HYBRID_AC_START, SRNE_HYBRID_AC_COUNT,
+            slave=self.slave_address, logger_instance=self.logger,
+        )
+        if ac is not None and not ac.isError():
+            decoded.update(decode_registers_by_map(list(ac.registers), SRNE_HYBRID_AC, SRNE_HYBRID_AC_START))
+        return standardize_srne_hybrid(decoded)
 
     def read_dynamic_data(self) -> Dict[str, Any]:
         """
@@ -289,18 +368,22 @@ class SrneModbusPlugin(DevicePlugin):
             self.logger.error(f"SRNE Plugin '{self.instance_name}': Cannot read dynamic data, not connected.")
             return None
 
+        if self.device_profile == "hybrid":
+            try:
+                return self._read_hybrid_dynamic()
+            except ConnectionException as e:
+                self.last_error_message = f"Communication error: {e}"
+                self.logger.error(f"SRNE Plugin '{self.instance_name}': Hybrid read failed: {e}")
+                self.disconnect()
+                return None
+
         try:
             # Read all dynamic registers in one block (from 0x0100 to 0x0122)
             start_addr = 0x0100
             count = (0x0122 - 0x0100) + 1
-            # Try different parameter formats for pymodbus version compatibility
-            try:
-                result = self.client.read_holding_registers(start_addr, count, unit=self.slave_address)
-            except TypeError:
-                try:
-                    result = self.client.read_holding_registers(start_addr, count, slave=self.slave_address)
-                except TypeError:
-                    result = self.client.read_holding_registers(start_addr, count)
+            result = safe_read_holding_registers(
+                self.client, start_addr, count, slave=self.slave_address, logger_instance=self.logger
+            )
 
             if result.isError() or isinstance(result, ExceptionResponse):
                 raise ConnectionException(f"Modbus error reading dynamic registers: {result}")

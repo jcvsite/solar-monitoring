@@ -47,7 +47,10 @@ def load_configuration(config_path: str, app_state: AppState):
         app_state (AppState): The central application state object to be populated with
                               the loaded configuration values.
     """
-    config = configparser.ConfigParser(interpolation=None)
+    # config.ini.example documents options with trailing "; ..." notes. Without this,
+    # the note stays in the value and int()/enum conversions in plugins fail.
+    # A semicolon not preceded by whitespace is still kept, so passwords are unaffected.
+    config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(';',))
     if os.path.exists(config_path):
         config.read(config_path, encoding='utf-8')
         logger.info(f"Successfully read configuration from {config_path}")

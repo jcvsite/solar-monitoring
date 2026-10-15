@@ -60,6 +60,12 @@ GROWATT_INPUT_REGISTERS: Dict[str, Dict[str, Any]] = {
     "pv2_voltage": {"addr": 7, "type": "uint16", "scale": 0.1, "unit": "V", "desc": "PV2 voltage"},
     "pv2_current": {"addr": 8, "type": "uint16", "scale": 0.1, "unit": "A", "desc": "PV2 current"},
     "pv2_power": {"addr": 9, "type": "uint32", "scale": 0.1, "unit": "W", "desc": "PV2 input power"},
+    "pv3_voltage": {"addr": 11, "type": "uint16", "scale": 0.1, "unit": "V", "desc": "PV3 voltage"},
+    "pv3_current": {"addr": 12, "type": "uint16", "scale": 0.1, "unit": "A", "desc": "PV3 current"},
+    "pv3_power": {"addr": 13, "type": "uint32", "scale": 0.1, "unit": "W", "desc": "PV3 input power"},
+    "pv4_voltage": {"addr": 15, "type": "uint16", "scale": 0.1, "unit": "V", "desc": "PV4 voltage"},
+    "pv4_current": {"addr": 16, "type": "uint16", "scale": 0.1, "unit": "A", "desc": "PV4 current"},
+    "pv4_power": {"addr": 17, "type": "uint32", "scale": 0.1, "unit": "W", "desc": "PV4 input power"},
     "output_power": {"addr": 35, "type": "uint32", "scale": 0.1, "unit": "W", "desc": "Total output power (active)"},
     "grid_frequency": {"addr": 37, "type": "uint16", "scale": 0.01, "unit": "Hz", "desc": "Grid frequency"},
     "grid_l1_voltage": {"addr": 38, "type": "uint16", "scale": 0.1, "unit": "V", "desc": "Phase 1 voltage to grid"},
@@ -100,6 +106,27 @@ GROWATT_INPUT_REGISTERS: Dict[str, Dict[str, Any]] = {
     "total_direct_consumption_from_pv": {"addr": 1092, "type": "uint32", "scale": 0.1, "unit": "kWh", "desc": "Direct consumption from PV total"},
     "today_energy_from_grid": {"addr": 1096, "type": "uint32", "scale": 0.1, "unit": "kWh", "desc": "Energy from grid today"},
     "total_energy_from_grid": {"addr": 1100, "type": "uint32", "scale": 0.1, "unit": "kWh", "desc": "Energy from grid total"},
+}
+
+# WIT TL3 storage block (protocol II V1.39 input 8000-8124).
+# High word first, same as the rest of the Growatt map. PV9/string fields in the
+# PDF collide with each other, so only the battery/load/grid section is mapped.
+GROWATT_WIT_INPUT_START = 8034
+GROWATT_WIT_INPUT_COUNT = 62  # 8034 through 8095
+
+GROWATT_WIT_INPUT_REGISTERS: Dict[str, Dict[str, Any]] = {
+    "battery_voltage": {"addr": 8034, "type": "uint16", "scale": 0.1, "unit": "V"},
+    "battery_current": {"addr": 8035, "type": "int16", "scale": 0.1, "unit": "A"},
+    "today_battery_discharge_energy": {"addr": 8049, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "today_battery_charge_energy": {"addr": 8053, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "today_energy_to_user": {"addr": 8067, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "today_energy_to_grid": {"addr": 8071, "type": "uint32", "scale": 0.1, "unit": "kWh"},
+    "load_power": {"addr": 8079, "type": "uint32", "scale": 0.1, "unit": "W"},
+    "power_to_user": {"addr": 8081, "type": "uint32", "scale": 0.1, "unit": "W"},
+    "power_to_grid": {"addr": 8083, "type": "uint32", "scale": 0.1, "unit": "W"},
+    "battery_power": {"addr": 8091, "type": "int32", "scale": 0.1, "unit": "W"},
+    "battery_soc": {"addr": 8093, "type": "uint16", "unit": "%"},
+    "battery_soh": {"addr": 8094, "type": "uint16", "unit": "%"},
 }
 
 # -----------------------
@@ -204,6 +231,56 @@ GROWATT_FAULT_CODES = {
     405: "Firmware Version Mismatch",
     409: "Bus Over Voltage",
     411: "DSP/M3 Communication Abnormal",
+}
+
+# SPF off-grid input map (SPF 5000 ES and similar). Battery power is charge-positive.
+GROWATT_SPF_INPUT_COUNT = 80
+GROWATT_SPF_INPUT_REGISTERS: Dict[str, Dict[str, Any]] = {
+    "inverter_status": {"addr": 0, "type": "uint16"},
+    "pv1_voltage": {"addr": 1, "type": "uint16", "scale": 0.1},
+    "pv2_voltage": {"addr": 2, "type": "uint16", "scale": 0.1},
+    "pv1_power": {"addr": 3, "type": "uint32", "scale": 0.1},
+    "pv2_power": {"addr": 5, "type": "uint32", "scale": 0.1},
+    "pv1_current": {"addr": 7, "type": "uint16", "scale": 0.1},
+    "pv2_current": {"addr": 8, "type": "uint16", "scale": 0.1},
+    "output_power": {"addr": 9, "type": "uint32", "scale": 0.1},
+    "battery_voltage": {"addr": 17, "type": "uint16", "scale": 0.01},
+    "battery_soc": {"addr": 18, "type": "uint16"},
+    "grid_l1_voltage": {"addr": 20, "type": "uint16", "scale": 0.1},
+    "grid_frequency": {"addr": 21, "type": "uint16", "scale": 0.01},
+    "inverter_temperature": {"addr": 25, "type": "int16", "scale": 0.1},
+    # Power drawn from the AC input (grid or generator).
+    "ac_input_power": {"addr": 36, "type": "uint32", "scale": 0.1},
+    "today_pv1_energy": {"addr": 48, "type": "uint32", "scale": 0.1},
+    "total_pv1_energy": {"addr": 50, "type": "uint32", "scale": 0.1},
+    "today_pv2_energy": {"addr": 52, "type": "uint32", "scale": 0.1},
+    "total_pv2_energy": {"addr": 54, "type": "uint32", "scale": 0.1},
+    "today_battery_discharge_energy": {"addr": 60, "type": "uint32", "scale": 0.1},
+    "battery_power_charge": {"addr": 77, "type": "int32", "scale": 0.1},
+}
+
+# TL-XH / MIN / MOD input block. Battery voltage default scale is 0.01
+# (0.1 only on APX HV packs, which this map does not detect).
+GROWATT_TLXH_INPUT_START = 3001
+GROWATT_TLXH_INPUT_COUNT = 171  # 3001 through 3171
+GROWATT_TLXH_INPUT_REGISTERS: Dict[str, Dict[str, Any]] = {
+    "pv_total_power": {"addr": 3001, "type": "uint32", "scale": 0.1},
+    "pv1_voltage": {"addr": 3003, "type": "uint16", "scale": 0.1},
+    "pv1_current": {"addr": 3004, "type": "uint16", "scale": 0.1},
+    "pv1_power": {"addr": 3005, "type": "uint32", "scale": 0.1},
+    "pv2_voltage": {"addr": 3007, "type": "uint16", "scale": 0.1},
+    "pv2_power": {"addr": 3009, "type": "uint32", "scale": 0.1},
+    "grid_frequency": {"addr": 3025, "type": "uint16", "scale": 0.01},
+    "load_power": {"addr": 3045, "type": "uint32", "scale": 0.1},
+    "total_pv_energy": {"addr": 3053, "type": "uint32", "scale": 0.1},
+    "today_grid_import": {"addr": 3067, "type": "uint32", "scale": 0.1},
+    "total_grid_import": {"addr": 3069, "type": "uint32", "scale": 0.1},
+    "today_grid_export": {"addr": 3071, "type": "uint32", "scale": 0.1},
+    "total_grid_export": {"addr": 3073, "type": "uint32", "scale": 0.1},
+    "inverter_temperature": {"addr": 3093, "type": "int16", "scale": 0.1},
+    "battery_voltage": {"addr": 3169, "type": "uint16", "scale": 0.01},
+    "battery_current": {"addr": 3170, "type": "int16", "scale": 0.1},
+    "battery_soc": {"addr": 3171, "type": "uint16"},
 }
 
 GROWATT_WARNING_CODES = {

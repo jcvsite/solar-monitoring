@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
+from plugins.modbus_helper import safe_read_holding_registers
 from pymodbus.client import ModbusTcpClient, ModbusSerialClient
 from pymodbus.exceptions import ModbusException, ModbusIOException, ConnectionException as ModbusConnectionException
 from pymodbus.pdu import ExceptionResponse
@@ -67,7 +68,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
         "plugin_id": "deye_sunsynk",
         "category": "inverter",
         "protocols": ["modbus_tcp", "modbus_rtu"],
-        "models": ["SUN-5K-SG04LP1", "Sunsynk 5K", "SG01HP3"],
+        "models": ["SUN-5K-SG04LP1", "SUN-SG05LP1", "Sunsynk 5K", "SG01HP3", "SG05LP3"],
         "status": "testing",
         "api_version": 1,
     }
@@ -119,8 +120,11 @@ class DeyeSunsynkPlugin(DevicePlugin):
 
             if reg_type == "uint16": value = registers[0]
             elif reg_type == "int16": value = struct.unpack('>h', registers[0].to_bytes(2, 'big'))[0]
-            elif reg_type == "uint32_le":
+            elif reg_type in ("uint32_le", "uint32"):
+                # Deye energy totals are low word first. "uint32" in the legacy map means the same.
                 value = struct.unpack('<I', registers[0].to_bytes(2, 'little') + registers[1].to_bytes(2, 'little'))[0]
+            elif reg_type == "int32_le":
+                value = struct.unpack('<i', registers[0].to_bytes(2, 'little') + registers[1].to_bytes(2, 'little'))[0]
             elif reg_type == "string":
                 value = b''.join(r.to_bytes(2, 'big') for r in registers[:info.get("len")]).decode('ascii', errors='ignore').strip('\x00')
             else:
@@ -148,7 +152,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
             Number of registers required for the data type
         """
         """Determines the number of registers a data type occupies."""
-        if reg_type == "uint32_le": return 2
+        if reg_type in ("uint32_le", "int32_le", "uint32"): return 2
         elif reg_type in ["uint16", "int16"]: return 1
         elif reg_type == "string": return reg_len if reg_len else 1
         else:
@@ -193,6 +197,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
         
         self.model_series_cfg = str(self.plugin_config.get("deye_model_series", "auto")).split(";")[0].strip().lower()
         self.model_series = self.model_series_cfg if self.model_series_cfg != "auto" else "modern_hybrid"
+        self._model_series_label = self.model_series
         self._series_auto_detected = False
         self._apply_model_series_map(self.model_series)
         self._waiting_status_counter = 0
@@ -203,6 +208,20 @@ class DeyeSunsynkPlugin(DevicePlugin):
 
     def _apply_model_series_map(self, series: str) -> None:
         """Select register map for the given model series and rebuild read groups."""
+        # SG05LP1 (and SG01/SG02 LP1) use the 0-279 map. SG04LP1 stays on the 500+ map.
+        # SG05LP3 is close to the three-phase map; it is not a separate table.
+        aliases = {
+            "sg05lp1": "legacy_hybrid",
+            "sg01lp1": "legacy_hybrid",
+            "sg02lp1": "legacy_hybrid",
+            "sg04lp1": "modern_hybrid",
+            "sunsynk": "modern_hybrid",
+            "sg01hp3": "three_phase",
+            "sg04lp3": "three_phase",
+            "sg05lp3": "three_phase",
+        }
+        self._model_series_label = series
+        series = aliases.get(series, series)
         self.model_series = series
         self.registers_map = DEYE_COMMON_REGISTERS.copy()
         if series == "modern_hybrid":
@@ -214,6 +233,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
         else:
             self.logger.warning(f"Unknown 'deye_model_series' '{series}', defaulting to 'modern_hybrid'.")
             self.model_series = "modern_hybrid"
+            self._model_series_label = "modern_hybrid"
             self.registers_map.update(DEYE_MODERN_HYBRID_REGISTERS)
         self.static_registers_map = {k: v for k, v in self.registers_map.items() if v.get("static")}
         self.dynamic_registers_map = {k: v for k, v in self.registers_map.items() if not v.get("static")}
@@ -224,10 +244,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
         if not self.client:
             return False
         try:
-            try:
-                result = self.client.read_holding_registers(address=address, count=1, unit=self.slave_address)
-            except TypeError:
-                result = self.client.read_holding_registers(address=address, count=1, slave=self.slave_address)
+            result = safe_read_holding_registers(self.client, address, 1, slave=self.slave_address, logger_instance=self.logger)
             if result is None or getattr(result, "isError", lambda: True)():
                 return False
             regs = getattr(result, "registers", None)
@@ -267,7 +284,7 @@ class DeyeSunsynkPlugin(DevicePlugin):
             {"name": "serial_port", "type": str, "default": "/dev/ttyUSB0", "description": "Serial port for Modbus RTU."},
             {"name": "baud_rate", "type": int, "default": 9600, "description": "Baud rate for serial connection."},
             {"name": "slave_address", "type": int, "default": 1, "description": "Modbus slave address (unit ID)."},
-            {"name": "deye_model_series", "type": str, "default": "auto", "description": "Register map series, or 'auto' to probe fingerprints.", "options": ["auto", "modern_hybrid", "legacy_hybrid", "three_phase"]},
+            {"name": "deye_model_series", "type": str, "default": "auto", "description": "Register map series, or 'auto' to probe fingerprints. sg05lp1 uses the single-phase 0-279 map.", "options": ["auto", "modern_hybrid", "legacy_hybrid", "three_phase", "sg04lp1", "sg05lp1", "sg01hp3", "sg05lp3"]},
             {"name": "modbus_timeout_seconds", "type": int, "default": 15, "description": "Modbus connection and read timeout in seconds."},
             {"name": "inter_read_delay_ms", "type": int, "default": 100, "description": "Delay in milliseconds between Modbus reads."},
             {"name": "modbus_max_registers_per_read", "type": int, "default": 100, "description": "Max number of registers to read in a single request."},
@@ -287,9 +304,15 @@ class DeyeSunsynkPlugin(DevicePlugin):
         model_map = {
             "modern_hybrid": "Deye/Sunsynk Hybrid",
             "legacy_hybrid": "Deye Legacy Hybrid",
-            "three_phase": "Deye 3-Phase Hybrid"
+            "three_phase": "Deye 3-Phase Hybrid",
+            "sg05lp1": "Deye SG05LP1",
+            "sg04lp1": "Deye SG04LP1",
+            "sg01hp3": "Deye SG01HP3",
+            "sg05lp3": "Deye SG05LP3",
         }
-        model_name = model_map.get(self.model_series, "Deye/Sunsynk Inverter")
+        model_name = model_map.get(getattr(self, "_model_series_label", self.model_series), None)
+        if not model_name:
+            model_name = model_map.get(self.model_series, "Deye/Sunsynk Inverter")
         return f"{model_name} ({self.connection_type.value.upper()})"
 
     def connect(self) -> bool:
@@ -368,10 +391,9 @@ class DeyeSunsynkPlugin(DevicePlugin):
             True if client is connected and ready for communication
         """
         if not self.client: return False
-        if self.connection_type == ConnectionType.TCP:
-            return self.client.is_socket_open()
-        else: # Serial
-            return self.client.is_open
+        # pymodbus 3.x exposes is_socket_open() on both the TCP and serial clients;
+        # there is no is_open attribute on either.
+        return self.client.is_socket_open()
 
     def _build_modbus_read_groups(self, register_list: List[Tuple[str, Dict[str, Any]]]) -> List[Dict[str, Any]]:
         """
@@ -443,7 +465,9 @@ class DeyeSunsynkPlugin(DevicePlugin):
                     if not self.client or not self._is_client_connected():
                         raise ModbusIOException("Client invalid or disconnected before retry")
 
-                    read_result = self.client.read_holding_registers(address=group["start"], count=group["count"], unit=self.slave_address)
+                    read_result = safe_read_holding_registers(
+                        self.client, group["start"], group["count"], slave=self.slave_address, logger_instance=self.logger
+                    )
 
                     if isinstance(read_result, ExceptionResponse):
                         exc_msg = MODBUS_EXCEPTION_CODES.get(read_result.exception_code, f'Unknown Modbus Exc ({read_result.exception_code})')

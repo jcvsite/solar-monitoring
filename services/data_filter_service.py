@@ -83,6 +83,8 @@ class DataFilterService:
         # Intelligent decrease correction tracking
         # Format: {key: {'value': float, 'first_seen': timestamp, 'count': int, 'last_seen': timestamp}}
         self.potential_decreases: Dict[str, Dict[str, Any]] = {}
+        # (candidate SOC, consecutive sample count) while a jump is being confirmed
+        self._soc_jump_pending: Optional[Tuple[float, int]] = None
         
         # Cache for frequently accessed values
         self._daily_limits_cache: Optional[Dict[str, Optional[float]]] = None
@@ -219,10 +221,43 @@ class DataFilterService:
             soc_change_threshold = max_soc_change_percent * self.config.soc_change_buffer + 1.0
 
             if abs(value - last_known_value) > soc_change_threshold:
-                logger.warning(f"FILTER: SOC jump detected. New: {value:.1f}%, Last: {last_known_value:.1f}%. Change exceeds threshold of {soc_change_threshold:.1f}%. Holding last value.")
-                return last_known_value
-        
+                return self._confirm_soc_jump(value, last_known_value, soc_change_threshold)
+
+        self._soc_jump_pending = None
         return value
+
+    def _confirm_soc_jump(self, value: float, last_known_value: float, soc_change_threshold: float) -> float:
+        """Hold a large SOC step until the same reading repeats.
+
+        A single bad sample (often 0%) must not stick forever. The energy spike
+        filter already promotes a repeated value to the new baseline; SOC uses
+        the same confirmation count. Samples within the allowed step of the
+        candidate still count, so a pack that is slowly charging during the
+        window is not reset.
+        """
+        pending_value, count = self._soc_jump_pending or (None, 0)
+        tolerance = max(soc_change_threshold, 1.0)
+        if pending_value is not None and abs(value - pending_value) <= tolerance:
+            count += 1
+        else:
+            count = 1
+
+        needed = self.config.spike_confirmation_threshold
+        if count >= needed:
+            logger.info(
+                "FILTER: SOC jump confirmed after %d consistent samples. Accepting %.1f%% (was %.1f%%).",
+                count, value, last_known_value,
+            )
+            self._soc_jump_pending = None
+            return value
+
+        self._soc_jump_pending = (value, count)
+        logger.warning(
+            "FILTER: SOC jump detected. New: %.1f%%, Last: %.1f%%. Change exceeds threshold of %.1f%%. "
+            "Holding last value. (%d/%d)",
+            value, last_known_value, soc_change_threshold, count, needed,
+        )
+        return last_known_value
 
     def _cleanup_spike_history(self) -> None:
         """Clean up old spike history to prevent memory leaks."""
@@ -599,12 +634,15 @@ class DataFilterService:
             self.potential_spikes.clear()
             self.last_energy_timestamps.clear()
             self.potential_decreases.clear()
+            self._soc_jump_pending = None
             logger.info("FILTER: Reset all filter state")
         else:
             for key in keys:
                 self.potential_spikes.pop(key, None)
                 self.last_energy_timestamps.pop(key, None)
                 self.potential_decreases.pop(key, None)
+            if StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT in keys:
+                self._soc_jump_pending = None
             logger.info(f"FILTER: Reset filter state for keys: {keys}")
 
     def update_config(self, new_config: FilterConfig) -> None:

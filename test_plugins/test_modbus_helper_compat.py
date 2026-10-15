@@ -40,6 +40,18 @@ class TestCallWithSlaveCompat(unittest.TestCase):
         self.assertEqual(result, "ok36")
         self.assertEqual(calls, [(33000, 40, 7)])
 
+    def test_pymodbus_362_kwargs_does_not_drop_slave(self):
+        """venv pymodbus 3.6.2: device_id is swallowed by **kwargs and slave defaults to 0."""
+        calls = []
+
+        def read_input_registers(address, count=1, slave=0, **kwargs):
+            calls.append((address, count, slave, dict(kwargs)))
+            return "ok362"
+
+        result = _call_with_slave_compat(read_input_registers, 33000, 12, slave=1)
+        self.assertEqual(result, "ok362")
+        self.assertEqual(calls, [(33000, 12, 1, {})])
+
     def test_mid_slave_keyword_count(self):
         def read_input_registers(address, *, count=1, slave=1):
             return (address, count, slave)

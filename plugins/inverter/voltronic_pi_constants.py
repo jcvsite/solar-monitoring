@@ -90,8 +90,20 @@ def parse_qpigs(response: bytes) -> Optional[Dict[str, Any]]:
         inv_temp = f(11)
         pv_a = f(12) if len(parts) > 12 else 0.0
         pv_v = f(13) if len(parts) > 13 else 0.0
-        batt_dis_a = f(14) if len(parts) > 14 else 0.0
-        pv_w = pv_v * pv_a
+        # Older QPIGS: field 14 is battery discharge current.
+        # MAX / VM IV / King: field 14 is SCC battery voltage (has a decimal)
+        # and field 15 is discharge current. Field 19 is PV1 charging power.
+        batt_dis_a = 0.0
+        pv_w = None
+        if len(parts) > 14:
+            if "." in parts[14] and len(parts) > 15:
+                batt_dis_a = f(15)
+                if len(parts) > 19 and "." not in parts[19]:
+                    pv_w = f(19)
+            else:
+                batt_dis_a = f(14)
+        if pv_w is None:
+            pv_w = pv_v * pv_a
         # Net battery current: discharge positive
         batt_i = batt_dis_a - batt_charge_a
         batt_p = batt_v * batt_i
@@ -111,6 +123,31 @@ def parse_qpigs(response: bytes) -> Optional[Dict[str, Any]]:
             "raw_parts": parts,
         }
     except (ValueError, IndexError):
+        return None
+
+
+def parse_qpigs2(response: bytes) -> Optional[Dict[str, float]]:
+    """
+    QPIGS2 second PV string: (BB.B CCC.C DDDDD
+    current (A), voltage (V), charging power (W).
+    NAK / NOA means this inverter has no second string.
+    """
+    if not response or response[0:1] != b"(":
+        return None
+    text = response[1:].decode("ascii", errors="ignore").strip()
+    head = text.upper()
+    if head.startswith("NAK") or head.startswith("NOA"):
+        return None
+    parts = text.split()
+    if len(parts) < 3:
+        return None
+    try:
+        return {
+            "pv2_current": float(parts[0]),
+            "pv2_voltage": float(parts[1]),
+            "pv2_power": float(parts[2]),
+        }
+    except ValueError:
         return None
 
 

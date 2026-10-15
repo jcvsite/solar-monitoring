@@ -216,6 +216,7 @@ def poll_single_plugin_instance_thread(instance_id: str, app_state: AppState, da
 
     while app_state.running and not stop_event.is_set():
         cycle_start_time = time.monotonic()
+        is_this_cycle_truly_successful = False
         plugin_inst = app_state.active_plugin_instances.get(instance_id)
         if not plugin_inst:
             thread_logger.error("Plugin instance disappeared from active list. Thread exiting.")
@@ -362,6 +363,11 @@ def poll_single_plugin_instance_thread(instance_id: str, app_state: AppState, da
 
         cycle_duration = time.monotonic() - cycle_start_time
         sleep_time = max(0.1, app_state.poll_interval - cycle_duration)
+        # A failed cycle often already used the whole interval on retries. Waiting
+        # only the remainder (sometimes 0.1s) reconnects immediately and keeps a
+        # TCP-serial gateway from answering.
+        if not is_this_cycle_truly_successful:
+            sleep_time = max(sleep_time, float(app_state.poll_interval or 5))
         if app_state.running:
             stop_event.wait(timeout=sleep_time)
 

@@ -291,7 +291,7 @@ def apply_pending_and_reexec() -> None:
         # Let start_with_restart.bat start the new code. os.execv would detach
         # from that script and keep the old process's config loaded.
         print("Update applied. Exiting so the restart script can load it.")
-        raise SystemExit(0)
+        raise SystemExit(3)
     script = str(INSTALL_ROOT / "main.py")
     try:
         os.execv(sys.executable, [sys.executable, script] + sys.argv[1:])

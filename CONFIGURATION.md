@@ -293,6 +293,13 @@ slave_address = 1
 #   true  - always attempt storage block
 #   false - skip storage block (grid-tie only)
 has_storage = auto
+
+# Register family. auto probes SPH block 1000, then WIT block 8034.
+#   sph  - MIX/SPH, storage block at input 1000
+#   wit  - WIT TL3, storage block at input 8034
+#   spf  - SPF off-grid, single input block at 0
+#   tlxh - TL-XH / MIN / MOD, input block at 3001
+growatt_family = auto
 ```
 
 ### BMS Plugins
@@ -369,10 +376,14 @@ slave_address = 1
 | plugin_type | Notes |
 | :--- | :--- |
 | `inverter.goodwe_modbus_plugin` | EH/ET Modbus; optional `goodwe_map=auto\|et\|eh` |
-| `inverter.sofar_modbus_plugin` | HYD/G3; optional `sofar_series=auto\|hyd\|g3` |
+| `inverter.sofar_modbus_plugin` | HYD KTL/G3 and HYD ES; `sofar_series=auto\|hyd\|g3\|ep\|es` |
 | `inverter.sungrow_modbus_plugin` | SH hybrid input/holding registers |
 | `inverter.felicity_modbus_plugin` | T-REX / Growatt-like holding map |
 | `inverter.voltronic_pi_plugin` | PI30 (`QPIGS`); default baud **2400** |
+| `inverter.srne_modbus_plugin` | ML/HF controller; `device_profile=controller\|hybrid` for AC hybrids |
+| `inverter.solax_modbus_plugin` | X1/X3 hybrid input block; `solax_generation=gen3\|gen2` |
+| `inverter.alphaess_modbus_plugin` | Smile / hybrid holding registers |
+| `inverter.solinteg_modbus_plugin` | MHS/MHT holding registers |
 | `battery.jbd_bms_plugin` | JBD/Xiaoxiang UART @ 9600 |
 | `battery.daly_bms_plugin` | Daly Smart BMS UART @ 9600 |
 | `battery.pylontech_bms_plugin` | Console RS485 @ 115200; many installs use inverter SOC instead |

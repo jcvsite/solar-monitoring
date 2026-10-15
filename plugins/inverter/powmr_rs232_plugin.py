@@ -374,7 +374,8 @@ class PowmrCustomRs232Plugin(DevicePlugin):
             self._is_connected_flag = True
             self.logger.info(f"POWMR Plugin '{self.instance_name}': Successfully connected via Serial on {self.serial_port_path}")
             return True
-        except serial.SerialException as e:
+        except Exception as e:
+            # connect() must return a bool; letting this escape kills the poll thread.
             self.last_error_message = f"Failed to open serial port {self.serial_port_path}: {e}"
             self.logger.error(f"POWMR Plugin '{self.instance_name}': {self.last_error_message}")
             return False
@@ -408,7 +409,7 @@ class PowmrCustomRs232Plugin(DevicePlugin):
             self._is_connected_flag = True
             self.logger.info(f"POWMR Plugin '{self.instance_name}': Successfully connected via TCP to {self.tcp_host}:{self.tcp_port}")
             return True
-        except (socket.error, OSError) as e:
+        except Exception as e:
             self.last_error_message = f"Failed to connect to {self.tcp_host}:{self.tcp_port}: {e}"
             self.logger.error(f"POWMR Plugin '{self.instance_name}': {self.last_error_message}")
             if self.tcp_client:

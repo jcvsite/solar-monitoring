@@ -1,7 +1,7 @@
 // static/sw.js
 // Service worker: offline shell + cached static assets for the dashboard PWA
 
-const CACHE_NAME = 'solar-dashboard-v14';
+const CACHE_NAME = 'solar-dashboard-v15';
 const SHELL_URLS = [
   '/',
   '/static/css/dashboard.css',

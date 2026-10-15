@@ -240,8 +240,10 @@ SOLIS_FAULT_BITFIELD_MAPS: Dict[int, Dict[str, Any]] = {
         0: "BMS Charging Overcurrent", 2: "Over SoC", 3: "BMS Internal Protection", 4: "BMS Battery Module Unbalanced",
         # Solis protocol marks bit 7 reserved. Confirmed on a Seplos pack: BMS software shows Remaining Capacity Alarm.
         7: "Remaining Capacity Alarm" }},
-    # Operating status (33121). Bits 8–10 are "is X normal?" where 1=Yes/OK (not a fault).
-    # Source: Solis Appendix 6 / community maps (GrugBus, ginlong-solis YAML with invert on 8–10).
+    # Operating status (33121). Appendix 6: bits 8–10 are "is X normal?" (1=Yes).
+    # A healthy S5 often reports 0x0701 (bits 0 and 8–10 set). An S6 1P LV Hybrid
+    # leaves 8–10 clear while generating with no fault; the Solis app still shows normal.
+    # The decoder ignores 8–10 until at least one of them is set.
     33121: {"category": "status", "bits": {
         0: "Normal Operation",
         1: "Initializing",
@@ -261,6 +263,9 @@ SOLIS_FAULT_BITFIELD_MAPS: Dict[int, Dict[str, Any]] = {
 }
 ALERT_CATEGORIES: List[str] = sorted(list(set(v['category'] for v in SOLIS_FAULT_BITFIELD_MAPS.values())))
 
+# S6-EH1P L-PRO / L-PLUS (3-8 kW, including the 3-MPPT 8 kW) and the 2025
+# 9.9-16 kW hybrids use this same 33000 input map. DC inputs 3 and 4 are
+# already in the map. Register 34496 is the GEN/backup smart port, not grid-tied PV.
 SOLIS_INVERTER_MODEL_CODES: Dict[int, str] = {
     0: "Unknown",
     1: "Solis-2G Mini",

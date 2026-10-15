@@ -145,8 +145,10 @@ def check_display_token(app_state: AppState, request) -> Optional[str]:
 
 
 def _format_clock(now: datetime) -> str:
-    hour = now.strftime("%I").lstrip("0") or "12"
-    return f"{hour}:{now.strftime('%M %p')}"
+    """12-hour clock as H:MM. The ESP32 prints this string as the header time."""
+    hour12 = now.hour % 12 or 12
+    ampm = "AM" if now.hour < 12 else "PM"
+    return f"{hour12}:{now.minute:02d} {ampm}"
 
 
 def _tz_offset_seconds(tzinfo) -> Optional[int]:
@@ -287,11 +289,15 @@ def build_display_payload(app_state: AppState, packet: Optional[dict] = None) ->
     )
 
     grid_state, grid_label = derive_grid_state(packet)
-    now = datetime.now(app_state.local_tzinfo) if app_state.local_tzinfo else datetime.now()
-    ts = now.strftime("%Y-%m-%d %H:%M:%S") if app_state.local_tzinfo else ""
-    tz_name = None
+    # Always the server clock at this request. An empty clock makes the ESP32
+    # fall back to its own NTP time (compiled offset is UTC).
     if app_state.local_tzinfo is not None:
-        tz_name = getattr(app_state.local_tzinfo, "key", str(app_state.local_tzinfo))
+        now = datetime.now(app_state.local_tzinfo)
+    else:
+        now = datetime.now().astimezone()
+    tz_name = None
+    if now.tzinfo is not None:
+        tz_name = getattr(now.tzinfo, "key", None) or now.tzname()
 
     batt_time = _str(_unwrap(packet, StandardDataKeys.OPERATIONAL_BATTERY_TIME_REMAINING_ESTIMATE_TEXT))
     if batt_time == STATUS_NA:
@@ -311,10 +317,11 @@ def build_display_payload(app_state: AppState, packet: Optional[dict] = None) ->
         "app": DISPLAY_APP_ID,
         "title": getattr(app_state, "system_title", "Solar Monitoring"),
         "age_s": round(age_s, 1) if age_s is not None else None,
-        "ts": ts,
-        "clock": _format_clock(now) if app_state.local_tzinfo else "",
+        "ts": now.strftime("%Y-%m-%d %H:%M"),
+        "unix": int(now.timestamp()),
+        "clock": _format_clock(now),
         "timezone": tz_name,
-        "tz_offset_sec": _tz_offset_seconds(app_state.local_tzinfo),
+        "tz_offset_sec": _tz_offset_seconds(now.tzinfo),
         "weather": _fetch_weather_cached(app_state),
         "soc": _num(_unwrap(packet, StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT)),
         "batt_w": batt_power,

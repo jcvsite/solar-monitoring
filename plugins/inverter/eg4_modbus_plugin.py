@@ -24,6 +24,8 @@ Supported Models:
 - EG4 6000XP, 12000XP, 18000XP series
 - EG4 PowerPro series
 - Compatible EG4 hybrid inverter models with V58 protocol
+- FlexBOSS18/21, 18kPV, and GridBOSS are not covered. Their Wi-Fi dongle speaks
+  the Luxpower frame on TCP port 8000, not this V58 Modbus map.
 
 Protocol Reference: EG4 Modbus RTU Protocol V58
 GitHub Project: https://github.com/jcvsite/solar-monitoring
@@ -33,12 +35,10 @@ License: MIT
 import logging
 import struct
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
-from pymodbus.constants import Endian
 
 try:
     from pymodbus.client import ModbusSerialClient, ModbusTcpClient
     from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException, ConnectionException as ModbusConnectionException
-    from pymodbus.payload import BinaryPayloadDecoder
     from pymodbus.pdu import ExceptionResponse
 except ImportError:
     ModbusSerialClient = None
@@ -55,6 +55,13 @@ from .eg4_modbus_constants import (
 )
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port, check_icmp_ping
+from plugins.modbus_helper import (
+    _call_with_slave_compat,
+    decode_int16,
+    decode_int32_le,
+    decode_uint16,
+    decode_uint32_le,
+)
 from enum import Enum
 
 UNKNOWN = "Unknown"
@@ -288,11 +295,11 @@ class Eg4ModbusPlugin(DevicePlugin):
         Returns:
             A dictionary mapping register addresses to their values, or None if all reads failed.
         """
-        if not self.client or not self.client.is_open: 
+        if not self.client or not self.client.is_socket_open():
             return None
         all_regs = {}
         for start, count in chunks:
-            result = read_method(start, count, unit=self.slave_address)
+            result = _call_with_slave_compat(read_method, start, count, slave=self.slave_address)
             if result.isError():
                 self.logger.warning(f"EG4 Plugin '{self.instance_name}': Modbus error reading chunk starting at {start}: {result}")
                 continue
@@ -315,34 +322,30 @@ class Eg4ModbusPlugin(DevicePlugin):
         for key, info in reg_map.items():
             addr = info["addr"]
             if addr not in regs: continue
+            reg_type = info.get("type", "uint16")
 
-            # Create a decoder for each value to handle the specific little-endian byte/word order
-            # The protocol specifies high/low bytes are reversed, and for 32-bit, the words are also reversed.
-            # This corresponds to little-endian for both.
-            
-            if info.get("type") == "string":
+            if reg_type == "string":
                 length = info.get("len", 1)
                 byte_data = b''
                 for i in range(length):
                     if addr + i in regs:
                         byte_data += struct.pack('>H', regs[addr + i])
-                value = byte_data.decode('ascii', errors='ignore').strip().replace('\x00', '')
+                decoded[key] = byte_data.decode('ascii', errors='ignore').strip().replace('\x00', '')
+                continue
 
+            if reg_type == "uint8":
+                # Two values share one register: byte_offset 0 is the low byte, 1 the high byte.
+                raw = regs[addr] & 0xFFFF
+                value = (raw >> 8) if info.get("byte_offset", 0) else (raw & 0xFF)
+            elif reg_type in ("uint32", "int32"):
+                # V58 stores 32-bit values low word first.
+                if addr + 1 not in regs: continue
+                pair = [regs[addr], regs[addr + 1]]
+                value = decode_int32_le(pair, 0) if reg_type == "int32" else decode_uint32_le(pair, 0)
+            elif reg_type == "int16":
+                value = decode_int16([regs[addr]], 0)
             else:
-                registers_to_decode = [regs[addr]]
-                if info.get("type") == "uint32" or info.get("type") == "int32":
-                    if addr + 1 in regs:
-                        registers_to_decode.append(regs[addr + 1])
-                    else: continue
-                
-                decoder = BinaryPayloadDecoder.fromRegisters(
-                    registers_to_decode, byteorder=Endian.Little, wordorder=Endian.Little
-                )
-
-                if info.get("type") == "uint32": value = decoder.decode_32bit_uint()
-                elif info.get("type") == "int32": value = decoder.decode_32bit_int()
-                elif info.get("type") == "int16": value = decoder.decode_16bit_int()
-                else: value = decoder.decode_16bit_uint()
+                value = decode_uint16([regs[addr]], 0)
 
             scale = info.get("scale", 1.0)
             offset = info.get("offset", 0.0)

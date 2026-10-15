@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover
 
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state, parse_config_int, parse_config_str
 from plugins.plugin_utils import check_tcp_port
-from plugins.inverter.voltronic_pi_constants import build_command, find_response, parse_qpigs, parse_qmn
+from plugins.inverter.voltronic_pi_constants import build_command, find_response, parse_qpigs, parse_qpigs2, parse_qmn
 
 if TYPE_CHECKING:
     from core.app_state import AppState
@@ -175,13 +175,26 @@ class VoltronicPiPlugin(DevicePlugin):
             if not d:
                 self.last_error_message = "QPIGS parse failed"
                 return None
+            pv2 = None
+            try:
+                raw2 = self._xfer("QPIGS2")
+                resp2 = find_response(raw2)
+                if resp2:
+                    pv2 = parse_qpigs2(resp2)
+            except Exception as exc:
+                self.logger.debug("QPIGS2 unavailable: %s", exc)
+            pv_total = d.get("pv_power") or 0.0
+            if pv2:
+                pv_total += pv2["pv2_power"]
+                if self.last_known_static_data is not None:
+                    self.last_known_static_data[StandardDataKeys.STATIC_NUMBER_OF_MPPTS] = 2
             batt_p = d.get("battery_power")
             status = "Discharging" if (batt_p or 0) > 50 else "Charging" if (batt_p or 0) < -50 else "Idle"
-            return {
+            data = {
                 StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT: "Normal",
                 StandardDataKeys.BATTERY_STATUS_TEXT: status,
                 StandardDataKeys.AC_POWER_WATTS: d.get("ac_power"),
-                StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: d.get("pv_power"),
+                StandardDataKeys.PV_TOTAL_DC_POWER_WATTS: pv_total,
                 StandardDataKeys.LOAD_TOTAL_POWER_WATTS: d.get("ac_power"),
                 StandardDataKeys.BATTERY_POWER_WATTS: batt_p,
                 StandardDataKeys.BATTERY_CURRENT_AMPS: d.get("battery_current"),
@@ -198,6 +211,11 @@ class VoltronicPiPlugin(DevicePlugin):
                 StandardDataKeys.PV_MPPT1_CURRENT_AMPS: d.get("pv_current"),
                 StandardDataKeys.PV_MPPT1_POWER_WATTS: d.get("pv_power"),
             }
+            if pv2:
+                data[StandardDataKeys.PV_MPPT2_VOLTAGE_VOLTS] = pv2["pv2_voltage"]
+                data[StandardDataKeys.PV_MPPT2_CURRENT_AMPS] = pv2["pv2_current"]
+                data[StandardDataKeys.PV_MPPT2_POWER_WATTS] = pv2["pv2_power"]
+            return data
         except Exception as e:
             self.last_error_message = str(e)
             self.logger.error("Voltronic read failed: %s", e)

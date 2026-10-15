@@ -105,7 +105,12 @@ MAX_VALID_CELL_V = 5.0
 MIN_VALID_TEMP_C = -40.0
 MAX_VALID_TEMP_C = 125.0
 MIN_VALID_SOC = 0.0
-MAX_VALID_SOC = 105.0 
+MAX_VALID_SOC = 105.0
+# Seplos can latch the SOC register at 0% after a false low-SOC calibration
+# while residual/full capacity still track the pack. Only substitute the
+# capacity ratio when the pack voltage says it is not empty.
+SOC_CAPACITY_MISMATCH_POINTS = 15.0
+MIN_CELL_V_FOR_SOC_FALLBACK = 3.10
 MIN_VALID_SOH = 0.0
 MAX_VALID_SOH = 100.0
 MIN_VALID_CYCLE = 0
@@ -252,6 +257,7 @@ class SeplosBMSV2(BMSPluginBase):
         self.client: Union[serial.Serial, socket.socket, None] = None
         self.receive_buffer = bytearray()
         self.last_error_message: Optional[str] = None
+        self._soc_capacity_fallback = False
 
         log_conn_params = f"Instance: '{self.instance_name}', Type: {self.connection_type}, PackAddr: {self.pack_address:02X}"
         valid_config = True
@@ -737,6 +743,46 @@ class SeplosBMSV2(BMSPluginBase):
             return int.from_bytes(byte_data, byteorder="big", signed=signed)
         except (ValueError, UnicodeError, IndexError): return None
     
+    def _soc_from_capacity_if_latched(
+        self,
+        soc_val: Optional[float],
+        rem_ah: Optional[float],
+        full_ah: Optional[float],
+        bms_data: Dict[str, Dict[str, Any]],
+    ) -> Optional[float]:
+        """Use remaining/full capacity when the SOC register is far too low.
+
+        Seplos coulomb counting can latch SOC at 0% after a false low-voltage
+        calibration. Residual and full capacity in the same frame often stay
+        correct. Substitute only when the lowest cell is still above the empty
+        range, so a genuinely empty pack keeps its reported 0%.
+        """
+        if rem_ah is None or full_ah is None or full_ah <= 0:
+            self._soc_capacity_fallback = False
+            return soc_val
+
+        derived_soc = round(max(0.0, min(100.0, (rem_ah / full_ah) * 100.0)), 1)
+        min_cell_v = bms_data.get(BMS_KEY_CELL_VOLTAGE_MIN, {}).get("value")
+        pack_not_empty = isinstance(min_cell_v, (int, float)) and min_cell_v >= MIN_CELL_V_FOR_SOC_FALLBACK
+        latched_low = soc_val is None or (derived_soc - soc_val) >= SOC_CAPACITY_MISMATCH_POINTS
+        if not (pack_not_empty and latched_low):
+            self._soc_capacity_fallback = False
+            return soc_val
+
+        if not self._soc_capacity_fallback:
+            self.logger.warning(
+                "S '%s': BMS reported SOC %s%% but remaining/full capacity is %.1f/%.1f Ah "
+                "(%.1f%%) and min cell is %.3f V. Using capacity-based SOC.",
+                self.instance_name,
+                "n/a" if soc_val is None else f"{soc_val:.1f}",
+                rem_ah,
+                full_ah,
+                derived_soc,
+                min_cell_v,
+            )
+        self._soc_capacity_fallback = True
+        return derived_soc
+
     def _decode_telemetry_payload(self, info_data_hex_ascii: bytes) -> Dict[str, Dict[str, Any]]:
         """
         Decodes the telemetry INFO payload from the BMS.
@@ -831,15 +877,20 @@ class SeplosBMSV2(BMSPluginBase):
             bms_volt_val_external = round(port_voltage_raw * 0.01, 2) if port_voltage_raw is not None else None
             internal_pack_volt_val = round(total_voltage_raw * 0.01, 2) if total_voltage_raw is not None else None
 
+            rem_ah = round(residual_cap_raw * 0.01, 2) if residual_cap_raw is not None else None
+            full_ah = round(bms_reported_capacity_raw * 0.01, 2) if bms_reported_capacity_raw is not None else None
+            rated_ah = round(rated_cap_raw * 0.01, 2) if rated_cap_raw is not None else None
+
             bms_data[BMS_KEY_CURRENT] = {"value": bms_curr_val, "unit": "A"}
             bms_data[BMS_KEY_VOLTAGE] = {"value": bms_volt_val_external, "unit": "V"}
             bms_data[BMS_KEY_POWER] = {"value": round(bms_curr_val * internal_pack_volt_val, 2) if bms_curr_val is not None and internal_pack_volt_val is not None else None, "unit": "W"}
-            bms_data[BMS_KEY_REMAINING_CAPACITY_AH] = {"value": round(residual_cap_raw * 0.01, 2) if residual_cap_raw is not None else None, "unit": "Ah"}
-            bms_data[BMS_KEY_FULL_CAPACITY_AH] = {"value": round(bms_reported_capacity_raw * 0.01, 2) if bms_reported_capacity_raw is not None else None, "unit": "Ah"}
-            bms_data[BMS_KEY_NOMINAL_CAPACITY_AH] = {"value": round(rated_cap_raw * 0.01, 2) if rated_cap_raw is not None else None, "unit": "Ah"}
+            bms_data[BMS_KEY_REMAINING_CAPACITY_AH] = {"value": rem_ah, "unit": "Ah"}
+            bms_data[BMS_KEY_FULL_CAPACITY_AH] = {"value": full_ah, "unit": "Ah"}
+            bms_data[BMS_KEY_NOMINAL_CAPACITY_AH] = {"value": rated_ah, "unit": "Ah"}
             
             soc_val = round(soc_raw * 0.1, 1) if soc_raw is not None else None
-            if soc_val is not None and not (MIN_VALID_SOC <= soc_val <= MAX_VALID_SOC): soc_val = None 
+            if soc_val is not None and not (MIN_VALID_SOC <= soc_val <= MAX_VALID_SOC): soc_val = None
+            soc_val = self._soc_from_capacity_if_latched(soc_val, rem_ah, full_ah, bms_data)
             bms_data[BMS_KEY_SOC] = {"value": soc_val, "unit": "%"}
             
             cycles_val = cycles_raw

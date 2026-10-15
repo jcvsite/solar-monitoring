@@ -45,7 +45,7 @@ class GoodweModbusPlugin(ModbusInverterPluginBase):
         "plugin_id": "goodwe_modbus",
         "category": "inverter",
         "protocols": ["modbus_tcp", "modbus_rtu"],
-        "models": ["EH", "ET", "ES"],
+        "models": ["EH", "ET", "ES", "ET G2", "ES G2"],
         "status": "testing",
         "api_version": 1,
     }

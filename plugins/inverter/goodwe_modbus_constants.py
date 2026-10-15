@@ -13,6 +13,8 @@ Features:
 
 Supported Models:
 - GoodWe EH / ET / ES hybrid families
+- ET G2, ES G2, and SBP G2 when the inverter Modbus TCP port is enabled.
+  The Wi-Fi-only module does not expose this map.
 
 Register Categories:
 - GOODWE_ET_DYNAMIC: Real-time operational holding registers

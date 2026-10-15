@@ -142,10 +142,15 @@ def _extra_plugin_keys(plugin_type: str) -> Dict[str, str]:
         extras["deye_model_series"] = "auto"
     if "growatt" in plugin_type:
         extras["has_storage"] = "auto"
+        extras["growatt_family"] = "auto"
     if "goodwe" in plugin_type:
         extras["goodwe_map"] = "auto"
     if "sofar" in plugin_type:
         extras["sofar_series"] = "auto"
+    if "srne" in plugin_type:
+        extras["device_profile"] = "controller"
+    if "solax" in plugin_type:
+        extras["solax_generation"] = "gen3"
     if "jk_bms" in plugin_type:
         extras["jk_protocol_mode"] = "uart"
     if "voltronic" in plugin_type:
@@ -188,6 +193,9 @@ def _instance_name(plugin_type: str, category: str) -> str:
         "luxpower_modbus": "INV_LuxPower",
         "eg4_modbus": "INV_EG4",
         "srne_modbus": "INV_SRNE",
+        "solax_modbus": "INV_SolaX",
+        "alphaess_modbus": "INV_AlphaESS",
+        "solinteg_modbus": "INV_Solinteg",
         "powmr_rs232": "INV_POWMR",
         "seplos_bms_v2": "BMS_Seplos_v2",
         "seplos_bms_v3": "BMS_Seplos_v3",

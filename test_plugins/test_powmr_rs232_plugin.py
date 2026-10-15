@@ -89,8 +89,8 @@ class TestPowmrRs232Plugin(unittest.TestCase):
 
     def test_plugin_initialization(self):
         """Test plugin initialization and configuration parsing."""
-        self.assertEqual(self.plugin.name, "powmr_custom_rs232")
-        self.assertEqual(self.plugin.pretty_name, "POWMR RS232 Inverter")
+        self.assertEqual(self.plugin.name, "powmr_rs232")
+        self.assertEqual(self.plugin.pretty_name, "POWMR Inverter")
         self.assertEqual(self.plugin.connection_type, ConnectionType.SERIAL)
         self.assertEqual(self.plugin.serial_port_path, "COM3")
         self.assertEqual(self.plugin.baud_rate, 9600)
@@ -376,14 +376,16 @@ class TestPowmrRs232Plugin(unittest.TestCase):
             main_logger=self.logger
         )
         
-        mock_socket_instance = Mock()
+        # check_tcp_port() uses the socket as a context manager, so Mock is not enough.
+        mock_socket_instance = MagicMock()
         mock_socket.return_value = mock_socket_instance
         
         result = tcp_plugin.connect()
         
         self.assertTrue(result)
         self.assertTrue(tcp_plugin.is_connected)
-        mock_socket_instance.connect.assert_called_once_with(("192.168.1.100", 502))
+        # check_tcp_port() connects once for the pre-check before the real connection.
+        mock_socket_instance.connect.assert_any_call(("192.168.1.100", 502))
 
     @patch('plugins.inverter.powmr_rs232_plugin.socket.socket')
     def test_tcp_connection_failure(self, mock_socket):
@@ -406,16 +408,18 @@ class TestPowmrRs232Plugin(unittest.TestCase):
 
     def test_disconnect_cleanup(self):
         """Test proper cleanup during disconnect."""
-        # Mock connections
-        self.plugin.serial_client = Mock()
-        self.plugin.serial_client.is_open = True
-        self.plugin.tcp_client = Mock()
+        # Mock connections. disconnect() clears both attributes, so keep references.
+        serial_client = Mock()
+        serial_client.is_open = True
+        tcp_client = Mock()
+        self.plugin.serial_client = serial_client
+        self.plugin.tcp_client = tcp_client
         self.plugin._is_connected_flag = True
         
         self.plugin.disconnect()
         
-        self.plugin.serial_client.close.assert_called_once()
-        self.plugin.tcp_client.close.assert_called_once()
+        serial_client.close.assert_called_once()
+        tcp_client.close.assert_called_once()
         self.assertIsNone(self.plugin.serial_client)
         self.assertIsNone(self.plugin.tcp_client)
         self.assertFalse(self.plugin.is_connected)

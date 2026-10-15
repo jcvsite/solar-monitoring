@@ -179,7 +179,7 @@ def trigger_script_restart(reason: str):
         # os.execv starts a detached process. start_with_restart.bat then
         # starts another one, loses the lock, and never reloads config.ini.
         logger.critical("Exiting so the Windows restart script can load config.ini again.")
-        os._exit(0)
+        os._exit(3)
     script = os.path.abspath(sys.argv[0] if sys.argv else __file__)
     try:
         os.execv(sys.executable, [sys.executable, script] + sys.argv[1:])

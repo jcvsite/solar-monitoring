@@ -23,6 +23,7 @@ License: MIT
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -65,24 +66,36 @@ def create_modbus_client(
     )
 
 
+def _slave_keyword(method: Callable, slave: int) -> Dict[str, int]:
+    """Pick the slave argument this pymodbus version actually accepts.
+
+    pymodbus 3.6.2 (the version pinned in the venv) is ``slave=0`` plus ``**kwargs``.
+    Passing ``device_id=`` does not raise TypeError: it is swallowed, and the request
+    goes out as slave 0. A gateway then returns exception 11 and the plugin disconnects.
+    """
+    try:
+        params = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return {"slave": slave}
+    for name in ("device_id", "slave", "unit"):
+        if name in params:
+            return {name: slave}
+    return {"slave": slave}
+
+
 def _call_with_slave_compat(method: Callable, address: int, count: int, slave: int = 1, **kwargs):
     """
     Call a pymodbus read method across 3.x API variants.
 
     Compatibility matrix:
-    - pymodbus <=3.6: method(address, count, unit=/slave=)
-    - pymodbus ~3.7–3.10: method(address, count=count, slave=)  (count often keyword-only)
-    - pymodbus >=3.11: method(address, count=count, device_id=)
+    - pymodbus <=3.5: method(address, count, unit=)
+    - pymodbus 3.6–3.10: method(address, count, slave=)  (3.6 also swallows unknown keywords)
+    - pymodbus >=3.11: method(address, *, count=, device_id=)
     """
+    slave_kw = _slave_keyword(method, slave)
     attempts = (
-        # Newest first (keyword-only count + device_id)
-        lambda: method(address, count=count, device_id=slave, **kwargs),
-        lambda: method(address, count=count, slave=slave, **kwargs),
-        lambda: method(address, count=count, unit=slave, **kwargs),
-        # Older positional count + unit/slave
-        lambda: method(address, count, slave=slave, **kwargs),
-        lambda: method(address, count, unit=slave, **kwargs),
-        # Last resort: no slave/unit/device_id
+        lambda: method(address, count=count, **slave_kw, **kwargs),
+        lambda: method(address, count, **slave_kw, **kwargs),
         lambda: method(address, count=count, **kwargs),
         lambda: method(address, count, **kwargs),
     )
@@ -120,6 +133,17 @@ def safe_read_input_registers(client: Any, address: int, count: int, slave: int 
     return result
 
 
+def safe_read_coils(client: Any, address: int, count: int, slave: int = 1, logger_instance: Optional[logging.Logger] = None):
+    """Read coils with slave/unit compatibility."""
+    log = logger_instance or logger
+    if client is None:
+        raise ConnectionError("Modbus client is None")
+    result = _call_with_slave_compat(client.read_coils, address, count, slave=slave)
+    if isinstance(result, ExceptionResponse) or (hasattr(result, "isError") and result.isError()):
+        log.debug("Coil read error @%s count=%s: %s", address, count, result)
+    return result
+
+
 def decode_uint16(registers: List[int], index: int) -> Optional[int]:
     if index < 0 or index >= len(registers):
         return None
@@ -145,6 +169,20 @@ def decode_uint32_le(registers: List[int], index: int) -> Optional[int]:
     return ((registers[index + 1] & 0xFFFF) << 16) | (registers[index] & 0xFFFF)
 
 
+def _as_int32(raw: Optional[int]) -> Optional[int]:
+    if raw is None:
+        return None
+    return raw - 0x100000000 if raw >= 0x80000000 else raw
+
+
+def decode_int32_be(registers: List[int], index: int) -> Optional[int]:
+    return _as_int32(decode_uint32_be(registers, index))
+
+
+def decode_int32_le(registers: List[int], index: int) -> Optional[int]:
+    return _as_int32(decode_uint32_le(registers, index))
+
+
 def decode_registers_by_map(
     registers: List[int],
     register_map: Dict[str, Dict[str, Any]],
@@ -153,7 +191,7 @@ def decode_registers_by_map(
     """
     Decode a contiguous register block using a simple map:
     {name: {addr, type, scale?, offset?}}
-    Types: uint16, int16, uint32, uint32_le
+    Types: uint16, int16, uint32, uint32_le, int32, int32_le
     """
     decoded: Dict[str, Any] = {}
     for key, info in register_map.items():
@@ -170,6 +208,10 @@ def decode_registers_by_map(
             val = decode_uint32_be(registers, idx)
         elif reg_type == "uint32_le":
             val = decode_uint32_le(registers, idx)
+        elif reg_type in ("int32", "int32_be"):
+            val = decode_int32_be(registers, idx)
+        elif reg_type == "int32_le":
+            val = decode_int32_le(registers, idx)
         else:
             val = decode_uint16(registers, idx)
         if val is None:

@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 
 from plugins.plugin_interface import DevicePlugin, StandardDataKeys, derive_battery_charge_state
 from plugins.plugin_utils import check_tcp_port
+from plugins.modbus_helper import safe_read_coils, safe_read_input_registers
 from pymodbus.client import ModbusTcpClient, ModbusSerialClient
 from pymodbus.exceptions import ModbusException, ModbusIOException
 
@@ -183,7 +184,7 @@ class SeplosBmsV3Plugin(DevicePlugin):
         if not self.is_connected: return None
         try:
             # Read manufacturer info from 0x1700, length 51
-            result = self.client.read_input_registers(0x1700, 51, unit=self.slave_address)
+            result = safe_read_input_registers(self.client, 0x1700, 51, slave=self.slave_address, logger_instance=self.logger)
             if result.isError(): return None
             # The result is a long string, let's parse the useful parts
             full_string = b''.join(r.to_bytes(2, 'big') for r in result.registers).decode('ascii', errors='ignore').strip('\x00')
@@ -296,7 +297,7 @@ class SeplosBmsV3Plugin(DevicePlugin):
             A dictionary of the decoded values, or None on a Modbus error.
         """
         try:
-            result = self.client.read_input_registers(start_addr, count, unit=self.slave_address)
+            result = safe_read_input_registers(self.client, start_addr, count, slave=self.slave_address, logger_instance=self.logger)
             if result.isError(): return None
             
             decoded = {}
@@ -332,7 +333,7 @@ class SeplosBmsV3Plugin(DevicePlugin):
             Modbus error.
         """
         try:
-            result = self.client.read_coils(start_addr, count, unit=self.slave_address)
+            result = safe_read_coils(self.client, start_addr, count, slave=self.slave_address, logger_instance=self.logger)
             if result.isError(): return None
             return result.bits
         except ModbusIOException as e:
