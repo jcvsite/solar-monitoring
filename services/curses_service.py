@@ -16,7 +16,10 @@ GitHub Project: https://github.com/jcvsite/solar-monitoring
 License: MIT
 """
 
-import curses
+try:
+    import curses
+except ImportError:
+    curses = None
 import logging
 import time
 import copy
@@ -88,6 +91,8 @@ class CursesService:
 
     def force_cleanup(self) -> None:
         """Force cleanup of curses state - called when watchdog restarts threads."""
+        if not self.curses_available:
+            return
         try:
             logger.info("Force cleanup triggered - performing targeted BMS color preservation")
             

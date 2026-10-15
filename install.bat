@@ -19,7 +19,7 @@ echo.
 echo [INFO] Install directory: %CD%
 echo.
 echo [INFO] Recommended Python: 3.11 or 3.12 from https://www.python.org/downloads/
-echo [INFO] Supported: Python 3.9+ ^(including 3.14 with current requirements^)
+echo [INFO] Supported: Python 3.9+ ^(web dashboard on 3.15+; console UI through 3.14^)
 echo.
 
 REM -------------------------------------------------------------
@@ -76,8 +76,8 @@ for /f "tokens=1,2 delims=." %%A in ("%PYTHON_VERSION%") do (
     set "PY_MINOR=%%B"
 )
 if "!PY_MAJOR!"=="3" if !PY_MINOR! GEQ 15 (
-    echo [WARNING] Python %PYTHON_VERSION% is very new. If dependency install fails,
-    echo           install Python 3.12 from python.org and re-run install.bat.
+    echo [WARNING] Python %PYTHON_VERSION% has no windows-curses build yet.
+    echo           The web dashboard will install. The console dashboard needs Python 3.12 or 3.14.
 )
 echo.
 
@@ -148,7 +148,7 @@ REM -------------------------------------------------------------
 REM Smoke-test critical imports
 REM -------------------------------------------------------------
 echo [STEP] Verifying critical modules can import...
-"%VENV_PY%" -c "import flask, flask_socketio, simple_websocket, pymodbus, serial, paho.mqtt.client, packaging, ping3, tinytuya, curses; print('OK')"
+"%VENV_PY%" -c "import flask, flask_socketio, simple_websocket, pymodbus, serial, paho.mqtt.client, packaging, ping3, tinytuya; print('OK')"
 if errorlevel 1 (
     echo [ERROR] Dependency import check failed.
     echo Prefer Python 3.11/3.12, delete the venv folder, and re-run install.bat.
@@ -156,6 +156,11 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [INFO] Import check passed
+"%VENV_PY%" -c "import curses" >nul 2>&1
+if errorlevel 1 (
+    echo [WARNING] Console dashboard unavailable on this Python.
+    echo           Open http://localhost:8081 after startup. For the console UI, use Python 3.12 or 3.14.
+)
 echo.
 
 REM -------------------------------------------------------------
