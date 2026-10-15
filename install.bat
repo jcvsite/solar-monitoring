@@ -77,7 +77,7 @@ for /f "tokens=1,2 delims=." %%A in ("%PYTHON_VERSION%") do (
 )
 if "!PY_MAJOR!"=="3" if !PY_MINOR! GEQ 15 (
     echo [WARNING] Python %PYTHON_VERSION% has no windows-curses build yet.
-    echo           The web dashboard will install. The console dashboard needs Python 3.12 or 3.14.
+    echo           The console dashboard will use plain text. Python 3.12 or 3.14 has the colored UI.
 )
 echo.
 
@@ -158,8 +158,8 @@ if errorlevel 1 (
 echo [INFO] Import check passed
 "%VENV_PY%" -c "import curses" >nul 2>&1
 if errorlevel 1 (
-    echo [WARNING] Console dashboard unavailable on this Python.
-    echo           Open http://localhost:8081 after startup. For the console UI, use Python 3.12 or 3.14.
+    echo [WARNING] Colored console UI unavailable on this Python. A plain text console is used instead.
+    echo           Python 3.12 or 3.14 provides the colored dashboard.
 )
 echo.
 

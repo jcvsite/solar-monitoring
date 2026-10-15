@@ -29,6 +29,7 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 - **Web flow board**: battery direction / flow arrows prefer `BATTERY_CHARGE_STATE`, then status text keywords, then ±10 W power sign.
 - **Weather map** uses Esri light/dark canvas tiles.
 - **Windows restart script**: clean exit (code 0) stops the loop; update/watchdog exits with code 3 so the script reloads `config.ini`. Dependency check runs before the loop.
+- **Console dashboard without curses:** Python 3.15 and other installs missing `windows-curses` keep a plain text status screen (power, SOC, grid, plugins) instead of turning the console dashboard off.
 
 ### Fixed
 - **Seplos V2 SOC**: when the SOC register latches at 0% but remaining/full capacity and cell voltage say the pack is not empty, report the capacity ratio.
@@ -37,7 +38,7 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 - **BMS aggregator status**: check “discharging” before “charging” (substring bug); recognize Floating; publish `BATTERY_CHARGE_STATE`.
 - **KPI grid direction**: live Import/Export labels used the wrong sign vs the flow board (SDK: +export / −import). Live watts now show on the matching Grid Import / Grid Export card.
 - **Windows install.bat**: prefer `py -3`, ignore the Microsoft Store stub, and work when `TEMP` is under `C:\Users` (including Python 3.14).
-- **Windows install on Python 3.15:** `windows-curses` has no build yet, so it is no longer a hard dependency. Python 3.15 also ships a `curses` package without the `_curses` extension; that import is ignored so the process still starts. The console dashboard stays off until a 3.14-or-older Python is used.
+- **Windows install on Python 3.15:** `windows-curses` has no build yet, so it is no longer a hard dependency. Python 3.15 also ships a `curses` package without the `_curses` extension; that import is ignored so the process still starts, and the console shows plain text.
 
 ## [1.4.0] - 2026-07-24
 

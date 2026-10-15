@@ -21,6 +21,8 @@ try:
 except ImportError:
     curses = None
 import logging
+import os
+import sys
 import time
 import copy
 import threading
@@ -68,12 +70,12 @@ class CursesService:
         self.update_interval = app_state.config.getint('CONSOLE_DASHBOARD', 'DASHBOARD_UPDATE_INTERVAL', fallback=1)
         self.font_scale = str(app_state.config.get('CONSOLE_DASHBOARD', 'FONT_SCALE', fallback='normal')).strip().lower()
         self.stdscr = None
+        self._plain_tty = False
         # Python 3.15 ships Lib/curses/__init__.py, but the _curses extension
         # is missing on Windows, so "import curses" raises ModuleNotFoundError.
         self.curses_available = curses is not None and hasattr(curses, "initscr")
-        if not self.curses_available:
-            logger.warning("Curses library not found, console dashboard disabled.")
-            self.enabled = False
+        if not self.curses_available and self.enabled:
+            logger.warning("Curses library not found. Using a plain text console dashboard.")
 
     @staticmethod
     def _hex_to_curses_rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -83,10 +85,155 @@ class CursesService:
         return (r * 1000 // 255, g * 1000 // 255, b * 1000 // 255)
 
     def start(self) -> None:
-        """Starts the curses dashboard in a separate thread if enabled."""
+        """Starts the console dashboard in a separate thread if enabled."""
         if not self.enabled:
             return
-        threading.Thread(target=self._run_dashboard, name="CursesUI", daemon=True).start()
+        if self.curses_available:
+            target, name = self._run_dashboard, "CursesUI"
+        else:
+            target, name = self._run_plain_console, "PlainConsole"
+        threading.Thread(target=target, name=name, daemon=True).start()
+
+    def _enable_plain_console(self) -> None:
+        """Turn on ANSI redraw when stdout is a real terminal."""
+        try:
+            self._plain_tty = bool(sys.stdout.isatty())
+        except Exception:
+            self._plain_tty = False
+            return
+        if not self._plain_tty or os.name != "nt":
+            return
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+        except Exception:
+            self._plain_tty = False
+
+    def _metric(self, data: Dict, key: str, precision: int = 1, unit: str = "") -> str:
+        entry = data.get(key)
+        value = entry.get("value") if isinstance(entry, dict) else None
+        if value is None or value == "":
+            return STATUS_NA
+        if isinstance(value, bool):
+            text = "ON" if value else "OFF"
+        elif isinstance(value, (int, float)):
+            text = format_value(value, precision)
+        else:
+            text = self.ANSI_ESCAPE_PATTERN.sub("", str(value))
+        return f"{text} {unit}".rstrip() if unit else text
+
+    def _format_plain_status(self, data: Dict) -> str:
+        """One screen of the same readings the curses dashboard shows."""
+        now = datetime.now(self.app_state.local_tzinfo).strftime("%Y-%m-%d %H:%M:%S %Z")
+        title = getattr(self.app_state, "system_title", None) or "Solar Monitoring"
+        link = data.get(StandardDataKeys.CORE_PLUGIN_CONNECTION_STATUS, {}).get("value", STATUS_DISCONNECTED)
+        lines = [
+            f"{title} v{self.app_state.version}  {now}  Link: {str(link).upper()}",
+        ]
+        if self.app_state.update_available and self.app_state.latest_version:
+            lines.append(f"Update available: v{self.app_state.latest_version}")
+        port = getattr(self.app_state, "web_dashboard_port", 8081)
+        lines.append(f"Plain console (curses unavailable). Web: http://localhost:{port}  Ctrl+C to stop.")
+        lines.append("-" * 72)
+
+        inv = data.get(StandardDataKeys.STATIC_INVERTER_MODEL_NAME, {}).get("value")
+        lines.append(f"Inverter: {inv or UNKNOWN}")
+        for label, key, prec, unit in (
+            ("Status", StandardDataKeys.OPERATIONAL_INVERTER_STATUS_TEXT, 0, ""),
+            ("AC Power", StandardDataKeys.AC_POWER_WATTS, 0, "W"),
+            ("PV Power", StandardDataKeys.PV_TOTAL_DC_POWER_WATTS, 0, "W"),
+            ("PV Yield", StandardDataKeys.ENERGY_PV_DAILY_KWH, 2, "kWh"),
+            ("Grid Import", StandardDataKeys.ENERGY_GRID_DAILY_IMPORT_KWH, 2, "kWh"),
+            ("Grid Export", StandardDataKeys.ENERGY_GRID_DAILY_EXPORT_KWH, 2, "kWh"),
+            ("Load", StandardDataKeys.ENERGY_LOAD_DAILY_KWH, 2, "kWh"),
+        ):
+            lines.append(f"  {label:<12} {self._metric(data, key, prec, unit)}")
+
+        lines.append("")
+        batt = data.get(StandardDataKeys.STATIC_BATTERY_MODEL_NAME, {}).get("value")
+        lines.append(f"Battery: {batt or UNKNOWN}")
+        for label, key, prec, unit in (
+            ("SOC", StandardDataKeys.BATTERY_STATE_OF_CHARGE_PERCENT, 1, "%"),
+            ("Power", StandardDataKeys.BATTERY_POWER_WATTS, 0, "W"),
+            ("Status", StandardDataKeys.BATTERY_STATUS_TEXT, 0, ""),
+            ("Charge", StandardDataKeys.ENERGY_BATTERY_DAILY_CHARGE_KWH, 2, "kWh"),
+            ("Discharge", StandardDataKeys.ENERGY_BATTERY_DAILY_DISCHARGE_KWH, 2, "kWh"),
+            ("Cell min", StandardDataKeys.BMS_CELL_VOLTAGE_MIN_VOLTS, 3, "V"),
+            ("Cell max", StandardDataKeys.BMS_CELL_VOLTAGE_MAX_VOLTS, 3, "V"),
+            ("Cell diff", StandardDataKeys.BMS_CELL_VOLTAGE_DELTA_VOLTS, 3, "V"),
+        ):
+            lines.append(f"  {label:<12} {self._metric(data, key, prec, unit)}")
+
+        lines.append("")
+        lines.append("Grid")
+        for label, key, prec, unit in (
+            ("Power", StandardDataKeys.GRID_TOTAL_ACTIVE_POWER_WATTS, 0, "W"),
+            ("Voltage", StandardDataKeys.GRID_L1_VOLTAGE_VOLTS, 1, "V"),
+            ("Load", StandardDataKeys.LOAD_TOTAL_POWER_WATTS, 0, "W"),
+        ):
+            lines.append(f"  {label:<12} {self._metric(data, key, prec, unit)}")
+
+        lines.append("")
+        lines.append("Plugins")
+        names = getattr(self.app_state, "configured_plugin_instance_names", []) or []
+        if not names:
+            lines.append("  (none)")
+        for name in names:
+            status_key = f"{name}_{StandardDataKeys.CORE_PLUGIN_CONNECTION_STATUS}"
+            status_val = data.get(status_key, {}).get("value", STATUS_NA)
+            age = data.get(f"{name}_health_last_success_age_s", {}).get("value")
+            fails = data.get(f"{name}_health_consecutive_failures", {}).get("value")
+            age_txt = f"{int(age)}s" if isinstance(age, (int, float)) else "--"
+            fail_txt = str(fails) if fails is not None else "0"
+            lines.append(f"  {name:<12} {status_val}  age={age_txt}  fail={fail_txt}")
+
+        lines.append("")
+        web_clients = getattr(self.app_state, "web_clients_connected", 0) or 0
+        web_txt = f"active ({web_clients})" if web_clients else "inactive"
+        lines.append(
+            "Services  "
+            f"MQTT={self.app_state.mqtt_last_state or 'disabled'}  "
+            f"Web={web_txt}  "
+            f"Tuya={self.app_state.tuya_last_known_state}"
+        )
+
+        alerts = data.get(StandardDataKeys.OPERATIONAL_CATEGORIZED_ALERTS_DICT, {}).get("value") or {}
+        alert_bits = []
+        if isinstance(alerts, dict):
+            for category, messages in alerts.items():
+                if not messages:
+                    continue
+                if isinstance(messages, (list, tuple)):
+                    alert_bits.append(f"{category}: {'; '.join(str(m) for m in messages[:3])}")
+                else:
+                    alert_bits.append(f"{category}: {messages}")
+        lines.append("Alerts    " + ("; ".join(alert_bits) if alert_bits else "none"))
+        return "\n".join(lines) + "\n"
+
+    def _write_plain_screen(self, text: str) -> None:
+        if self._plain_tty:
+            sys.stdout.write("\033[H\033[J")
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    def _run_plain_console(self) -> None:
+        """Refresh a text status screen when the curses module cannot load."""
+        self._enable_plain_console()
+        while self.app_state.running:
+            loop_start = time.monotonic()
+            try:
+                with self.app_state.data_lock:
+                    data_snapshot = copy.deepcopy(self.app_state.shared_data)
+                self._write_plain_screen(self._format_plain_status(data_snapshot))
+            except Exception as e:
+                logger.error(f"Plain console dashboard failed: {e}", exc_info=True)
+            remaining = max(0.2, self.update_interval - (time.monotonic() - loop_start))
+            if self.app_state.main_threads_stop_event.wait(remaining):
+                break
 
     def force_cleanup(self) -> None:
         """Force cleanup of curses state - called when watchdog restarts threads."""
