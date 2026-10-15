@@ -4,24 +4,39 @@ All notable changes to the Solar Monitoring Framework will be documented in this
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-15
+
 ### Added
+- **SolaX, AlphaESS, and Solinteg Modbus plugins**, with setup-wizard entries and example config sections (`solax_generation=gen3|gen2`).
 - **Canonical battery charge state** (`StandardDataKeys.BATTERY_CHARGE_STATE` + `derive_battery_charge_state()`): shared enum `charging | discharging | idle | floating | unknown` used by inverter/BMS plugins, display API, web flow board, and ESP32 glance.
 - **ESP32 display config API** (`services/display_api.py`, `services/display_config.py`): `display_config.json`, `GET/POST /api/display/config`, layout/theme catalogs, GitHub firmware proxy (`/api/display/update-info`, `/api/display/firmware/latest.bin`), optional `DISPLAY_API_TOKEN`.
 - **Web dashboard ESP32 settings** (`static/js/ui/display-settings.js`, `static/css/display_preview.css`): **Settings → ESP32 display** — layout/theme mockup gallery, rotation, settings PIN, sync to devices; live preview of all 5 glance layouts and 5 themes.
 - **mDNS discovery** (`services/mdns_service.py`): advertises `_solar-monitoring._tcp` with API paths for ESP32 auto-discovery.
+- **Opt-in GitHub updater** (`utils/updater.py`): `UPDATE_CHANNEL=release|main` and `AUTO_UPDATE_CHECK_HOURS` (0 checks only at startup).
+- **Growatt family selection** (`growatt_family=auto|sph|wit|spf|tlxh`) and **Sofar HYD ES** (`sofar_series=es`) plus **SRNE hybrid** AC block (`device_profile=hybrid`).
+- **MQTT sensors** for per-phase grid power, EPS, inverter battery temperature/SOH/charge state, and extra BMS fields.
 - **Display API tests** (`test_plugins/test_display_api.py`, `test_plugins/test_display_config.py`).
 - **ESP32 viewer companion** (separate repo): [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32) — CYD firmware that consumes `/api/display*` (OTA via GitHub releases on that repo).
 
 ### Changed
+- **Inverter register maps** refreshed for Deye, EG4, GoodWe, Growatt, Sofar, Solis, SRNE, Sungrow, and Voltronic, including signed 32-bit Modbus decodes.
+- **pymodbus slave argument**: pick `device_id` / `slave` / `unit` from the installed client signature so pymodbus 3.6 does not silently send slave 0.
+- **Failed poll cycles** wait a full interval before reconnecting, so a TCP-serial gateway can answer.
+- **Config inline comments**: values may end with ` ; note` without breaking int/enum parsing.
 - **Display API glance/BMS payloads**: emit `battery_charge_state` (plugin enum preferred, else derived from power + status text); inverter temp falls back to BMS cell average when missing.
-- **ESP32 firmware ownership**: removed the in-tree `esp32_display/` copy and monorepo firmware CI; development and releases live only in [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32).
+- **ESP32 firmware ownership**: removed the in-tree `esp32_display/` copy and monorepo firmware CI; development and releases live only in [Solar-monitoring-viewer-esp32](https://github.com/jcvsite/Solar-monitoring-viewer-esp32). Firmware tag lookup accepts tags with or without a `v` prefix.
 - **Web dashboard**: switched Flask-SocketIO from `eventlet` to `async_mode='threading'` (real WebSockets via `simple-websocket`). Removes `eventlet`/`greenlet` and the process-wide monkey patch; better suited to blocking SQLite/plugin I/O on modern Python (incl. 3.14).
 - **Web flow board**: battery direction / flow arrows prefer `BATTERY_CHARGE_STATE`, then status text keywords, then ±10 W power sign.
+- **Weather map** uses Esri light/dark canvas tiles.
+- **Windows restart script**: clean exit (code 0) stops the loop; update/watchdog exits with code 3 so the script reloads `config.ini`. Dependency check runs before the loop.
 
 ### Fixed
+- **Seplos V2 SOC**: when the SOC register latches at 0% but remaining/full capacity and cell voltage say the pack is not empty, report the capacity ratio.
 - **Seplos V2 charge direction**: telesignalization flags are authoritative; stop guessing from current polarity; emit charge state and normalize power/current sign to framework convention (+discharge / −charge).
+- **SOC jump filter**: reject implausible state-of-charge steps.
 - **BMS aggregator status**: check “discharging” before “charging” (substring bug); recognize Floating; publish `BATTERY_CHARGE_STATE`.
 - **KPI grid direction**: live Import/Export labels used the wrong sign vs the flow board (SDK: +export / −import). Live watts now show on the matching Grid Import / Grid Export card.
+- **Windows install.bat**: prefer `py -3`, ignore the Microsoft Store stub, and work when `TEMP` is under `C:\Users` (including Python 3.14).
 
 ## [1.4.0] - 2026-07-24
 

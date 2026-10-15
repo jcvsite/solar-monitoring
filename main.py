@@ -56,7 +56,7 @@ from utils.lock import acquire_lock, cleanup_lock_file
 from utils.update_checker import check_for_updates_safe, normalize_update_channel
 
 # Application version
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 
 def setup_logging(app_state: AppState):
